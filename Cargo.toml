@@ -1,0 +1,18 @@
+[package]
+name = "lambda-debug-proxy"
+version = "0.1.0"
+authors = ["rimutaka <max@onebro.me>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "0.2.4", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = "0.2"
+log = "0.4"
+lambda = { path = "/home/ubuntu/rust/aws-lambda-rust-runtime/lambda" }
+rusoto_sqs = { version = "0.45", features = ["rustls"], default-features = false }
+rusoto_core = { version = "0.45", features = ["rustls"], default-features = false }
