@@ -1,13 +1,3 @@
-/*! An AWS Lambda Proxy for local debugging of Lambdas running within complex
-AWS environments.
-
-## Env variables
-- `LAMBDA_PROXY_TRACING_LEVEL` - optional
-- `AWS_DEFAULT_REGION` or `AWS_REGION` - required
-- `LAMBDA_PROXY_REQ_QUEUE_URL` - the Queue URL for Lambda requests
-- `LAMBDA_PROXY_RESP_QUEUE_URL` - the Queue URL for Lambda responses
-*/
-
 use lambda::{handler_fn, Context};
 use rusoto_core::region::Region;
 use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
@@ -115,7 +105,11 @@ pub(crate) async fn my_handler(event: Value, ctx: Context) -> Result<Value, Erro
             continue;
         }
 
-        // delete the msg from the queue
+        // message arrived
+        let body = msgs[0].body.as_ref().expect("Failed to get message body");
+        debug!("Response:{}", body);
+
+        // delete it from the queue so it's not picked up again
         client
             .delete_message(DeleteMessageRequest {
                 queue_url: response_queue_url.clone(),
@@ -129,8 +123,7 @@ pub(crate) async fn my_handler(event: Value, ctx: Context) -> Result<Value, Erro
         debug!("Message deleted");
 
         // return the contents of the message as JSON Value
-        let body = msgs[0].body.as_ref().expect("Failed to get message body");
-        debug!("Response:{}", body);
+        
         return Ok(Value::from_str(body)?);
     }
 }
