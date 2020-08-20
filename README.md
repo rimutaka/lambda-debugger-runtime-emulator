@@ -55,6 +55,12 @@ Recommended settings:
 The lambda code running on your local machine has to be wrapped into a client that reads the queue, de-serializes the payload into your required format, calls your lambda and sends the response back. It is the exact reverse of what the  proxy function does. See [local.rs example](examples/local.rs) for a sample Rust implementation. It should be easy to port the sample wrapper into the language of your Lambda handler. There is no need to refactor the proxy.
 
 #### Running the Rust client from `examples/local.rs`:
-```
-cargo run --example local
-```
+
+1. Create a Lambda proxy with two queues on AWS.
+2. Configure env vars
+3. Prepare a test even for the proxy lambda
+4. Copy-paste the queue URLs and Region into your local client (`examples/local.rs`)
+5. Start the local client with `cargo run --example local`
+6. Fire the test event in the proxy lambda
+
+Your local client will read the message from `LAMBDA_PROXY_REQ` queue, send a response to `LAMBDA_PROXY_RESP` queue and exit. The proxy lambda will wait for a response and finish its execution as soon as it arrives or time out.
