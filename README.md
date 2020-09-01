@@ -1,10 +1,29 @@
 # Lambda Proxy Function for Remote Debugging
 
+*I often need to debug complex Lambda setups that are tightly integrated into other services and are hard to simulate in my dev environment. Even if I manage to grab the event JSON it is hard to send the response back in a timely manner. What I always wanted was to invoke Lambda handlers locally in response to AWS events in real time. This project is an early attempt to solve this problem.*
+
 This lambda function sends both `Payload` and `Context` to a predefined SQS queue and then waits for a response that is deserialized and passed back onto the runtime.
 
 In the meantime, you can read the message from the queue, deserialize  `Payload` and `Context`, process it locally and send back a response. If your local lambda fails you can re-read the message until either the proxy lambda times out or you send back a reply.
 
-The benefit of this approach vs using a local mock environment is the full integration in your infra. It is not always possible to use mock input or try to copy the input by hand. The proxy function will give you near-real time request/response with real data.
+![flow diagram](img/schematics.png)
+
+The benefit of this approach *vs* using a local [mock environment](https://aws.amazon.com/premiumsupport/knowledge-center/lambda-layer-simulated-docker/) is the full integration in your infra. It is not always possible to use mock input or try to copy the input by hand. The proxy function will give you near-real time request/response with real data.
+
+### Components
+
+- **Lambda Runtime** - a [modified Lambda runtime for Rust](https://github.com/rimutaka/aws-lambda-rust-runtime/tree/proxy-experiment) that adds a few required features
+- **Lambda Handler Proxy** - a [handler](https://github.com/rimutaka/lambda-debug-proxy/blob/master/src/main.rs) that relays data to/from SQS queues
+- **Request Queue** - an SQS queue for forwarding event details to the dev environment
+- **Response Queue** - an SQS queue for forwarding response details from the dev environment
+- **Lambda Handler Wrapper** - a [Lambda handler wrapper](https://github.com/rimutaka/lambda-debug-proxy/blob/master/examples/local.rs) running in dev environment and communicating with SQS queues
+- **Lambda Handler** - the handler function that is supposed to run on AWS Lambda, but will be debugged in the local dev environment
+
+If you are not familiar with [AWS SQS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html) you may not know that the messages [have to be explicitly deleted](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteMessage.html) from the queue. The request messages are deleted by the handler wrapper when the handler returns a response. This allows re-running the handler if it fails before sending a response, which is a handy debugging feature. The response messages are deleted by the handler proxy as soon as they arrive.
+
+It is possible for the response to arrive too late because either the Lambda Runtime or the caller timed out. For example, AWS APIGateway wait is limited to 30s. The Lambda function can be configured to wait for up to 15 minutes. Remember to check that all stale messages got deleted and purge the queues via the console or AWS CLI if needed. 
+
+![sequence diagram](img/sequence.png)
 
 ### Deployment
 
