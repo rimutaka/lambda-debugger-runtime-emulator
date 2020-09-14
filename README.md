@@ -12,10 +12,8 @@ Replace `--region ap-southeast-2` and `--function-name lambda-debug-proxy` with 
 
 ```
 cargo build --release --target x86_64-unknown-linux-musl
-
 cp ./target/x86_64-unknown-linux-musl/release/lambda-debug-proxy ./bootstrap && zip proxy.zip bootstrap && rm bootstrap
-
-aws lambda update-function-code --region ap-southeast-2 --function-name lambda-debug-proxy --zip-file fileb://proxy.zip
+aws lambda update-function-code --region us-east-1 --function-name lambda-debug-proxy --zip-file fileb://proxy.zip
 ```
 
 ### Lambda config

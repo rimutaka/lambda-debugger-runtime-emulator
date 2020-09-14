@@ -1,6 +1,9 @@
 use lambda::{handler_fn, Context};
 use rusoto_core::region::Region;
-use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
+use rusoto_sqs::{
+    DeleteMessageRequest, PurgeQueueRequest, ReceiveMessageRequest, SendMessageRequest, Sqs,
+    SqsClient,
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::env::var;
@@ -38,7 +41,7 @@ async fn main() -> Result<(), Error> {
 }
 
 //pub(crate) async fn my_handler(event: Value, _ctx: Context) -> Result<Value, Error> {
-pub(crate) async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
+async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
     debug!("Event: {:?}", event);
     debug!("Context: {:?}", ctx);
 
@@ -61,6 +64,14 @@ pub(crate) async fn my_handler(event: Value, ctx: Context) -> Result<Value, Erro
     let region = Region::default();
     debug!("Region: {:?}", region);
     let client = SqsClient::new(region);
+
+    // clear the response queue to avoid getting a stale message from a previously timed out request
+    debug!("Purging {} ", response_queue_url);
+    let _ = client
+        .purge_queue(PurgeQueueRequest {
+            queue_url: response_queue_url.clone(),
+        })
+        .await?;
 
     // Sending part
     let request_payload = RequestPayload { event, ctx };
@@ -123,7 +134,7 @@ pub(crate) async fn my_handler(event: Value, ctx: Context) -> Result<Value, Erro
         debug!("Message deleted");
 
         // return the contents of the message as JSON Value
-        
+
         return Ok(Value::from_str(body)?);
     }
 }
