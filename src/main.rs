@@ -1,9 +1,6 @@
 use lambda::{handler_fn, Context};
 use rusoto_core::region::Region;
-use rusoto_sqs::{
-    DeleteMessageRequest, PurgeQueueRequest, ReceiveMessageRequest, SendMessageRequest, Sqs,
-    SqsClient,
-};
+use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde::Serialize;
 use serde_json::Value;
 use std::env::var;
@@ -66,12 +63,7 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
     let client = SqsClient::new(region);
 
     // clear the response queue to avoid getting a stale message from a previously timed out request
-    debug!("Purging {} ", response_queue_url);
-    let _ = client
-        .purge_queue(PurgeQueueRequest {
-            queue_url: response_queue_url.clone(),
-        })
-        .await?;
+    purge_response_queue(&client, &response_queue_url).await?;
 
     // Sending part
     let request_payload = RequestPayload { event, ctx };
@@ -136,5 +128,49 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
         // return the contents of the message as JSON Value
 
         return Ok(Value::from_str(body)?);
+    }
+}
+
+async fn purge_response_queue(client: &SqsClient, response_queue_url: &String) -> Result<(), Error> {
+    debug!("Purging the queue, one msg at a time.");
+    loop {
+        let resp = client
+            .receive_message(ReceiveMessageRequest {
+                max_number_of_messages: Some(10),
+                queue_url: response_queue_url.clone(),
+                wait_time_seconds: Some(0),
+                ..Default::default()
+            })
+            .await?;
+
+        // wait until a message arrives or the function is killed by AWS
+        if resp.messages.is_none() {
+            debug!("No stale messages (resp.messages.is_none)");
+            return Ok(());
+        }
+
+        // an empty list returns when the queue wait time expires
+        let msgs = resp.messages.expect("Failed to get list of messages");
+        if msgs.is_empty() {
+            debug!("No stale messages (resp.messages.is_empty)");
+            return Ok(());
+        }
+
+        debug!("Deleting {} stale messages", msgs.len());
+
+        for msg in msgs {
+            // delete it from the queue
+            client
+                .delete_message(DeleteMessageRequest {
+                    queue_url: response_queue_url.clone(),
+                    receipt_handle: msg
+                        .receipt_handle
+                        .as_ref()
+                        .expect("Failed to get msg receipt")
+                        .into(),
+                })
+                .await?;
+            debug!("Message deleted");
+        }
     }
 }

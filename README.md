@@ -27,7 +27,7 @@ It is possible for the response to arrive too late because either the Lambda Run
 
 ### Deployment
 
-Replace `--region ap-southeast-2` and `--function-name lambda-debug-proxy` with your values.
+Replace `--region us-east-1` and `--function-name lambda-debug-proxy` with your values.
 
 ```
 cargo build --release --target x86_64-unknown-linux-musl
