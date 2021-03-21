@@ -4,6 +4,7 @@ version = "0.1.1"
 authors = ["rimutaka <max@onebro.me>"]
 edition = "2018"
 description = "AWS Lambda Runtime Proxy for local debugging"
+license = "Apache-2.0"
 repository = "https://github.com/rimutaka/lambda-debug-proxy"
 categories = ["web-programming::http-server"]
 keywords = ["AWS", "Lambda", "API"]
