@@ -1,4 +1,4 @@
-use lambda::{handler_fn, Context};
+use lambda_runtime::{handler_fn, Context};
 use rusoto_core::region::Region;
 use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde::Serialize;
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Error> {
         .init();
 
     let func = handler_fn(my_handler);
-    lambda::run(func).await?;
+    lambda_runtime::run(func).await?;
 
     Ok(())
 }
@@ -131,7 +131,10 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
     }
 }
 
-async fn purge_response_queue(client: &SqsClient, response_queue_url: &String) -> Result<(), Error> {
+async fn purge_response_queue(
+    client: &SqsClient,
+    response_queue_url: &String,
+) -> Result<(), Error> {
     debug!("Purging the queue, one msg at a time.");
     loop {
         let resp = client

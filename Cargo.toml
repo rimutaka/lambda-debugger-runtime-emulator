@@ -17,6 +17,6 @@ serde_json = "1"
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.2"
 log = "0.4"
-lambda = { git = "https://github.com/rimutaka/aws-lambda-rust-runtime", branch = "proxy-experiment" }
+lambda_runtime = { git = "https://github.com/rimutaka/aws-lambda-rust-runtime", branch = "proxy-experiment" }
 rusoto_sqs = { version = "0.46", features = ["rustls"], default-features = false }
 rusoto_core = { version = "0.46", features = ["rustls"], default-features = false }

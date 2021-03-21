@@ -1,4 +1,4 @@
-use lambda::Context;
+use lambda_runtime::Context;
 use rusoto_core::region::Region;
 use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde::Deserialize;
