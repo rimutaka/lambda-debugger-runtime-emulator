@@ -3,7 +3,7 @@ use rusoto_core::region::Region;
 use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde::Deserialize;
 use serde_json::Value;
-use tracing::{info};
+use tracing::info;
 
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -84,8 +84,7 @@ async fn get_input() -> Result<(RequestPayload, String), Error> {
 
         // convert JSON encoded body into event + ctx structures as defined by Lambda Runtime
         let body = msgs[0].body.as_ref().expect("Failed to get message body");
-        let payload: RequestPayload =
-            serde_json::from_str(body).expect("Failed to deserialize msg body");
+        let payload: RequestPayload = serde_json::from_str(body).expect("Failed to deserialize msg body");
 
         return Ok((payload, receipt_handle));
     }

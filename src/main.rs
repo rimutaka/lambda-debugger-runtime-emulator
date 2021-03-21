@@ -20,8 +20,7 @@ async fn main() -> Result<(), Error> {
     // get the log level from an env var
     let tracing_level = match var("LAMBDA_PROXY_TRACING_LEVEL") {
         Err(_) => tracing::Level::INFO,
-        Ok(v) => tracing::Level::from_str(&v)
-            .expect("Invalid tracing level. Use trace, debug, error or info"),
+        Ok(v) => tracing::Level::from_str(&v).expect("Invalid tracing level. Use trace, debug, error or info"),
     };
 
     // init the logger with the specified level
@@ -48,15 +47,10 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
         panic!();
     }
 
-    let request_queue_url =
-        var("LAMBDA_PROXY_REQ_QUEUE_URL").expect("Missing LAMBDA_PROXY_REQ_QUEUE_URL");
-    let response_queue_url =
-        var("LAMBDA_PROXY_RESP_QUEUE_URL").expect("Missing LAMBDA_PROXY_RESP_QUEUE_URL");
+    let request_queue_url = var("LAMBDA_PROXY_REQ_QUEUE_URL").expect("Missing LAMBDA_PROXY_REQ_QUEUE_URL");
+    let response_queue_url = var("LAMBDA_PROXY_RESP_QUEUE_URL").expect("Missing LAMBDA_PROXY_RESP_QUEUE_URL");
 
-    debug!(
-        "ReqQ URL: {}, RespQ URL {}",
-        request_queue_url, response_queue_url
-    );
+    debug!("ReqQ URL: {}, RespQ URL {}", request_queue_url, response_queue_url);
 
     let region = Region::default();
     debug!("Region: {:?}", region);
@@ -68,8 +62,7 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
     // Sending part
     let request_payload = RequestPayload { event, ctx };
 
-    let message_body =
-        serde_json::to_string(&request_payload).expect("Failed to serialize event + context");
+    let message_body = serde_json::to_string(&request_payload).expect("Failed to serialize event + context");
     debug!("Message body: {}", message_body);
 
     let send_result = client
@@ -131,10 +124,7 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
     }
 }
 
-async fn purge_response_queue(
-    client: &SqsClient,
-    response_queue_url: &String,
-) -> Result<(), Error> {
+async fn purge_response_queue(client: &SqsClient, response_queue_url: &String) -> Result<(), Error> {
     debug!("Purging the queue, one msg at a time.");
     loop {
         let resp = client
@@ -166,11 +156,7 @@ async fn purge_response_queue(
             client
                 .delete_message(DeleteMessageRequest {
                     queue_url: response_queue_url.clone(),
-                    receipt_handle: msg
-                        .receipt_handle
-                        .as_ref()
-                        .expect("Failed to get msg receipt")
-                        .into(),
+                    receipt_handle: msg.receipt_handle.as_ref().expect("Failed to get msg receipt").into(),
                 })
                 .await?;
             debug!("Message deleted");
