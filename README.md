@@ -52,8 +52,11 @@ Recommended settings:
 #### Env variables
 - `LAMBDA_PROXY_TRACING_LEVEL` - optional, default=INFO, use DEBUG to get full lambda logging or TRACE to go deeper into dependencies.
 - `AWS_DEFAULT_REGION` or `AWS_REGION` - required, but they should be pre-set by AWS
-- `LAMBDA_PROXY_REQ_QUEUE_URL` - the Queue URL for Lambda requests, required
-- `LAMBDA_PROXY_RESP_QUEUE_URL` - the Queue URL for Lambda responses, required
+- `LAMBDA_PROXY_REQ_QUEUE_URL` - the Queue URL for Lambda proxy requests, required
+- `LAMBDA_PROXY_RESP_QUEUE_URL` - the Queue URL for Lambda handler responses, optional.
+
+The proxy runs asynchronously if no `LAMBDA_PROXY_RESP_QUEUE_URL` is specifies. It sends the request to `LAMBDA_PROXY_REQ_QUEUE_URL` and returns `OK` regardless of what happens at the remote handler's end.
+This comes useful for debugging asynchronous functions like S3 event handlers. 
 
 ### Queue config
 

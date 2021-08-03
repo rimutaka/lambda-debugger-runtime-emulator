@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::env::var;
 use std::str::FromStr;
-use tracing::{debug, error};
+use tracing::debug;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -41,23 +41,13 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
     debug!("Event: {:?}", event);
     debug!("Context: {:?}", ctx);
 
-    // get some env vars
-    if var("AWS_DEFAULT_REGION").is_err() && var("AWS_REGION").is_err() {
-        error!("Either AWS_DEFAULT_REGION or AWS_REGION env vars must be set.");
-        panic!();
-    }
-
     let request_queue_url = var("LAMBDA_PROXY_REQ_QUEUE_URL").expect("Missing LAMBDA_PROXY_REQ_QUEUE_URL");
-    let response_queue_url = var("LAMBDA_PROXY_RESP_QUEUE_URL").expect("Missing LAMBDA_PROXY_RESP_QUEUE_URL");
 
-    debug!("ReqQ URL: {}, RespQ URL {}", request_queue_url, response_queue_url);
+    debug!("ReqQ URL: {}", request_queue_url);
 
     let region = Region::default();
     debug!("Region: {:?}", region);
     let client = SqsClient::new(region);
-
-    // clear the response queue to avoid getting a stale message from a previously timed out request
-    purge_response_queue(&client, &response_queue_url).await?;
 
     // Sending part
     let request_payload = RequestPayload { event, ctx };
@@ -76,51 +66,62 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
     let msg_id = send_result.message_id.unwrap_or_default();
     debug!("Sent with ID: {}", msg_id);
 
-    // start listening to the response
-    loop {
-        debug!("20s loop");
-        let resp = client
-            .receive_message(ReceiveMessageRequest {
-                max_number_of_messages: Some(1),
-                queue_url: response_queue_url.clone(),
-                wait_time_seconds: Some(20),
-                ..Default::default()
-            })
-            .await?;
+    // start listening to the response if the response queue was specified
+    // otherwise exit with OK status for an async request
+    if let Ok(response_queue_url) = var("LAMBDA_PROXY_RESP_QUEUE_URL") {
+        debug!("RespQ URL {}", response_queue_url);
+        // clear the response queue to avoid getting a stale message from a previously timed out request
+        // this call limits the invocations to no more than 1 per minute because AWS does not allow purging queues more often
+        purge_response_queue(&client, &response_queue_url).await?;
+        // now start listening
+        loop {
+            debug!("20s loop");
+            let resp = client
+                .receive_message(ReceiveMessageRequest {
+                    max_number_of_messages: Some(1),
+                    queue_url: response_queue_url.clone(),
+                    wait_time_seconds: Some(20),
+                    ..Default::default()
+                })
+                .await?;
 
-        // wait until a message arrives or the function is killed by AWS
-        if resp.messages.is_none() {
-            debug!("No messages yet");
-            continue;
+            // wait until a message arrives or the function is killed by AWS
+            if resp.messages.is_none() {
+                debug!("No messages yet");
+                continue;
+            }
+
+            // an empty list returns when the queue wait time expires
+            let msgs = resp.messages.expect("Failed to get list of messages");
+            if msgs.len() == 0 {
+                debug!("No messages yet");
+                continue;
+            }
+
+            // message arrived
+            let body = msgs[0].body.as_ref().expect("Failed to get message body");
+            debug!("Response:{}", body);
+
+            // delete it from the queue so it's not picked up again
+            client
+                .delete_message(DeleteMessageRequest {
+                    queue_url: response_queue_url.clone(),
+                    receipt_handle: msgs[0]
+                        .receipt_handle
+                        .as_ref()
+                        .expect("Failed to get msg receipt")
+                        .into(),
+                })
+                .await?;
+            debug!("Message deleted");
+
+            // return the contents of the message as JSON Value
+
+            return Ok(Value::from_str(body)?);
         }
-
-        // an empty list returns when the queue wait time expires
-        let msgs = resp.messages.expect("Failed to get list of messages");
-        if msgs.len() == 0 {
-            debug!("No messages yet");
-            continue;
-        }
-
-        // message arrived
-        let body = msgs[0].body.as_ref().expect("Failed to get message body");
-        debug!("Response:{}", body);
-
-        // delete it from the queue so it's not picked up again
-        client
-            .delete_message(DeleteMessageRequest {
-                queue_url: response_queue_url.clone(),
-                receipt_handle: msgs[0]
-                    .receipt_handle
-                    .as_ref()
-                    .expect("Failed to get msg receipt")
-                    .into(),
-            })
-            .await?;
-        debug!("Message deleted");
-
-        // return the contents of the message as JSON Value
-
-        return Ok(Value::from_str(body)?);
+    } else {
+        debug!("Async invocation. Not waiting for a response from the remote handler.");
+        return Ok(Value::Null);
     }
 }
 
