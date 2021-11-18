@@ -102,7 +102,7 @@ fn compress_output(response: String) -> String {
         return response;
     }
 
-    println!("Message size: {}B, max allowed: 262144B. Compressing.", response.len());
+    println!("Message size: {}B, max allowed: 262144B. Compressing...", response.len());
 
     // try to decompress the body
     let mut gzipper = GzEncoder::new(response.as_bytes(), Compression::fast());

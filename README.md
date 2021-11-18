@@ -84,3 +84,7 @@ The lambda code running on your local machine has to be wrapped into a client th
 6. Fire the test event in the proxy lambda
 
 Your local client will read the message from `LAMBDA_PROXY_REQ` queue, send a response to `LAMBDA_PROXY_RESP` queue and exit. The proxy lambda will wait for a response and finish its execution as soon as it arrives or time out.
+
+## Large payloads and data compression
+
+The proxy Lambda function running on AWS and the client running on the dev's machine send JSON payload to SQS. The size of the payload is [limited to 262,144 bytes by SQS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/quotas-messages.html). To get around this limitation the client may compress the JSON payload using [flate2 crate](https://crates.io/crates/flate2) and send it as an encoded Base58 string. The encoding/decoding happens automatically at both ends. Only large messages are compressed because it takes up to a few seconds in debug mode.
