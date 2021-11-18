@@ -1,9 +1,11 @@
+use flate2::read::GzDecoder;
 use lambda_runtime::{handler_fn, Context};
 use rusoto_core::region::Region;
 use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde::Serialize;
 use serde_json::Value;
 use std::env::var;
+use std::io::Read;
 use std::str::FromStr;
 use tracing::debug;
 
@@ -92,37 +94,71 @@ async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
             }
 
             // an empty list returns when the queue wait time expires
-            let msgs = resp.messages.expect("Failed to get list of messages");
+            let mut msgs = resp.messages.expect("Failed to get list of messages");
             if msgs.len() == 0 {
                 debug!("No messages yet");
                 continue;
             }
 
-            // message arrived
-            let body = msgs[0].body.as_ref().expect("Failed to get message body");
+            // message arrived - grab its handle for future reference
+            let receipt_handle = msgs[0]
+                .receipt_handle
+                .as_ref()
+                .expect("Failed to get msg receipt")
+                .to_owned();
+
+            let body = msgs
+                .pop()
+                .expect("msgs Vec should have been pre-checked for len(). It's a bug.")
+                .body
+                .expect("Failed to get message body");
             debug!("Response:{}", body);
+
+            let body = decode_maybe_binary(body);
 
             // delete it from the queue so it's not picked up again
             client
                 .delete_message(DeleteMessageRequest {
                     queue_url: response_queue_url.clone(),
-                    receipt_handle: msgs[0]
-                        .receipt_handle
-                        .as_ref()
-                        .expect("Failed to get msg receipt")
-                        .into(),
+                    receipt_handle,
                 })
                 .await?;
             debug!("Message deleted");
 
             // return the contents of the message as JSON Value
-
-            return Ok(Value::from_str(body)?);
+            return Ok(Value::from_str(&body)?);
         }
     } else {
         debug!("Async invocation. Not waiting for a response from the remote handler.");
         return Ok(Value::Null);
     }
+}
+
+/// Checks if the message is a Base58 encoded compressed text and either decodes/decompresses it
+/// or returns as-is if it's not encoded/compressed.
+fn decode_maybe_binary(body: String) -> String {
+    // check for presence of { at the beginning of the doc to determine if it's JSON or Base58
+    if body.len() == 0 || body.trim_start().starts_with("{") {
+        // looks like JSON - return as-is
+        return body;
+    }
+
+    // try to decode base58
+    let body_decoded = bs58::decode(&body)
+        .into_vec()
+        .expect("Failed to decode from maybe base58");
+
+    // try to decompress the body
+    let mut decoder = GzDecoder::new(body_decoded.as_slice());
+    let mut decoded: Vec<u8> = Vec::new();
+    let len = decoder
+        .read_to_end(&mut decoded)
+        .expect("Failed to decompress the payload");
+
+    debug!("Decoded {} bytes", len);
+
+    // return the bytes converted into a lossy unicode string
+    String::from_utf8(decoded).expect("Failed to convert decompressed payload to UTF8")
 }
 
 async fn purge_response_queue(client: &SqsClient, response_queue_url: &String) -> Result<(), Error> {
