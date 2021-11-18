@@ -125,11 +125,14 @@ fn compress_output(response: String) -> String {
 
 /// A standard routine for initializing a tracing provider for use in `main` and inside test functions.
 /// * tracing_level: pass None if not known in advance and should be taken from an env var
-pub(crate) fn init_tracing(tracing_level: Option<tracing::Level>) {
+pub fn init_tracing(tracing_level: Option<tracing::Level>) {
     // get the log level from an env var
-    let tracing_level = match var("LAMBDA_PROXY_TRACING_LEVEL") {
-        Err(_) => tracing::Level::INFO,
-        Ok(v) => tracing::Level::from_str(&v).expect("Invalid tracing level. Use trace, debug, error or info"),
+    let tracing_level = match tracing_level {
+        Some(v) => v,
+        None => match var("LAMBDA_PROXY_TRACING_LEVEL") {
+            Err(_) => tracing::Level::INFO,
+            Ok(v) => tracing::Level::from_str(&v).expect("Invalid tracing level. Use trace, debug, error or info"),
+        },
     };
 
     // init the logger with the specified level

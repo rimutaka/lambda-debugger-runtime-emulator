@@ -1,6 +1,6 @@
 use flate2::read::GzDecoder;
 use lambda_runtime::{handler_fn, Context, Error};
-use lib::{init_tracing, RequestPayload};
+use lambda_debug_proxy_client::{init_tracing, RequestPayload};
 use rusoto_core::region::Region;
 use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde_json::Value;
@@ -8,8 +8,6 @@ use std::env::var;
 use std::io::Read;
 use std::str::FromStr;
 use tracing::debug;
-
-mod lib;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {

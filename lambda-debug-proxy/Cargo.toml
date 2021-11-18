@@ -1,0 +1,25 @@
+[package]
+name = "lambda-debug-proxy"
+version = "0.2.0"
+authors = ["rimutaka <max@onebro.me>"]
+edition = "2018"
+description = "AWS Lambda Runtime Proxy for local debugging"
+license = "Apache-2.0"
+repository = "https://github.com/rimutaka/lambda-debug-proxy"
+categories = ["web-programming::http-server"]
+keywords = ["AWS", "Lambda", "API"]
+readme = "../../README.md"
+
+[dependencies]
+lambda-debug-proxy-client = { path = "../lambda-debug-proxy-client"}
+tokio = { version = "1.14", features = ["macros", "io-util", "sync", "rt-multi-thread"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flate2 = "1.0"
+bs58 = "0.4"
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = "0.3"
+log = "0.4"
+lambda_runtime = { git = "https://github.com/awslabs/aws-lambda-rust-runtime.git" }
+rusoto_sqs = { version = "0.47", features = ["rustls"], default-features = false }
+rusoto_core = { version = "0.47", features = ["rustls"], default-features = false }
