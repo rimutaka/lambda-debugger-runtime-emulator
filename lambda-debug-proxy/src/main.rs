@@ -1,6 +1,6 @@
 use flate2::read::GzDecoder;
-use lambda_runtime::{handler_fn, Context, Error};
 use lambda_debug_proxy_client::{init_tracing, RequestPayload};
+use lambda_runtime::{service_fn, Error, LambdaEvent};
 use rusoto_core::region::Region;
 use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde_json::Value;
@@ -13,12 +13,13 @@ use tracing::debug;
 async fn main() -> Result<(), Error> {
     init_tracing(None);
 
-    lambda_runtime::run(handler_fn(my_handler)).await?;
+    lambda_runtime::run(service_fn(my_handler)).await?;
 
     Ok(())
 }
 
-async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
+async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let (event, ctx) = event.into_parts();
     debug!("Event: {:?}", event);
     debug!("Context: {:?}", ctx);
 
