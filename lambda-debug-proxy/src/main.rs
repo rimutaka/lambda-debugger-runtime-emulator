@@ -1,45 +1,25 @@
 use flate2::read::GzDecoder;
-use lambda_runtime::{handler_fn, Context};
+use lambda_debug_proxy_client::{init_tracing, RequestPayload};
+use lambda_runtime::{service_fn, Error, LambdaEvent};
 use rusoto_core::region::Region;
 use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
-use serde::Serialize;
 use serde_json::Value;
 use std::env::var;
 use std::io::Read;
 use std::str::FromStr;
 use tracing::debug;
 
-pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
-
-#[derive(Serialize, Debug)]
-struct RequestPayload {
-    event: Value,
-    ctx: Context,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    // get the log level from an env var
-    let tracing_level = match var("LAMBDA_PROXY_TRACING_LEVEL") {
-        Err(_) => tracing::Level::INFO,
-        Ok(v) => tracing::Level::from_str(&v).expect("Invalid tracing level. Use trace, debug, error or info"),
-    };
+    init_tracing(None);
 
-    // init the logger with the specified level
-    tracing_subscriber::fmt()
-        .with_max_level(tracing_level)
-        .with_ansi(false)
-        .without_time()
-        .init();
-
-    let func = handler_fn(my_handler);
-    lambda_runtime::run(func).await?;
+    lambda_runtime::run(service_fn(my_handler)).await?;
 
     Ok(())
 }
 
-//pub(crate) async fn my_handler(event: Value, _ctx: Context) -> Result<Value, Error> {
-async fn my_handler(event: Value, ctx: Context) -> Result<Value, Error> {
+async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let (event, ctx) = event.into_parts();
     debug!("Event: {:?}", event);
     debug!("Context: {:?}", ctx);
 
