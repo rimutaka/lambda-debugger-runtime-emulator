@@ -12,11 +12,11 @@ The benefit of this approach *vs* using a local [mock environment](https://aws.a
 
 ### Components
 
-- **Lambda Runtime** - a [modified Lambda runtime for Rust](https://github.com/rimutaka/aws-lambda-rust-runtime/tree/proxy-experiment) that adds a few required features
-- **Lambda Handler Proxy** - a [handler](https://github.com/rimutaka/lambda-debug-proxy/blob/master/src/main.rs) that relays data to/from SQS queues
+- **Lambda Runtime** - a [modified Lambda runtime for Rust](https://github.com/awslabs/aws-lambda-rust-runtime/tree/master/lambda-runtime) that adds a few required features
+- **Lambda Handler Proxy** - a [handler](https://github.com/rimutaka/lambda-debug-proxy/blob/master/lambda-debug-proxy/src/main.rs) that relays data to/from SQS queues
 - **Request Queue** - an SQS queue for forwarding event details to the dev environment
 - **Response Queue** - an SQS queue for forwarding response details from the dev environment
-- **Lambda Handler Wrapper** - a [Lambda handler wrapper](https://github.com/rimutaka/lambda-debug-proxy/blob/master/examples/local.rs) running in dev environment and communicating with SQS queues
+- **Lambda Handler Wrapper** - a [library with supporting functions](https://github.com/rimutaka/lambda-debug-proxy/tree/master/lambda-debug-proxy-client) running in dev environment to pass the payload from SQS queues to the handler function
 - **Lambda Handler** - the handler function that is supposed to run on AWS Lambda, but will be debugged in the local dev environment
 
 If you are not familiar with [AWS SQS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html) you may not know that the messages [have to be explicitly deleted](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteMessage.html) from the queue. The request messages are deleted by the handler wrapper when the handler returns a response. This allows re-running the handler if it fails before sending a response, which is a handy debugging feature. The response messages are deleted by the handler proxy as soon as they arrive.

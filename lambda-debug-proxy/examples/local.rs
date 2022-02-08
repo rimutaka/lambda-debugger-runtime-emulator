@@ -31,8 +31,8 @@
 //! * https://github.com/stackmuncher/stm_server/blob/master/stm_inbox_router/src/main.rs
 
 #[cfg(not(debug_assertions))]
-use lambda_runtime::handler_fn;
-use lambda_runtime::{Context, Error};
+use lambda_runtime::service_fn;
+use lambda_runtime::{Error, LambdaEvent};
 use serde_json::Value;
 
 #[tokio::main]
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Error> {
 
     // use Lambda runtime when running on AWS in release mode
     #[cfg(not(debug_assertions))]
-    return lambda_runtime::run(handler_fn(my_handler)).await;
+    return lambda_runtime::run(service_fn(my_handler)).await;
 }
 
 /// This module is only used for local debugging via SQS and should not be deployed to Lambda.
@@ -61,7 +61,7 @@ async fn main() -> Result<(), Error> {
 #[cfg(debug_assertions)]
 mod proxy {
     use lambda_debug_proxy_client::{get_input, send_output};
-    use lambda_runtime::Error;
+    use lambda_runtime::{Error, LambdaEvent};
     use rusoto_core::region::Region;
     use tracing::info;
 
@@ -92,7 +92,7 @@ mod proxy {
             let (payload, receipt_handle) = get_input(&AWS_REGION, &request_queue_url).await?;
             info!("New msg arrived");
             // invoke the handler - replace it with an invocation of your own handler
-            let response = super::my_handler(payload.event, payload.ctx).await?;
+            let response = super::my_handler(LambdaEvent::new(payload.event, payload.ctx)).await?;
 
             // send back the response and delete the message from the queue
             send_output(
@@ -110,9 +110,9 @@ mod proxy {
 
 /// A basic example of a handler that passes input to output without any modifications.
 /// Replace it with your own handler.
-async fn my_handler(event: Value, _ctx: Context) -> Result<Value, Error> {
+async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     // do something useful here
 
     // return back the result
-    Ok(event)
+    Ok(event.into_parts().0)
 }
