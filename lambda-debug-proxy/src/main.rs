@@ -75,7 +75,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 
             // an empty list returns when the queue wait time expires
             let mut msgs = resp.messages.expect("Failed to get list of messages");
-            if msgs.len() == 0 {
+            if msgs.is_empty() {
                 debug!("No messages yet");
                 continue;
             }
@@ -110,7 +110,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         }
     } else {
         debug!("Async invocation. Not waiting for a response from the remote handler.");
-        return Ok(Value::Null);
+        Ok(Value::Null)
     }
 }
 
@@ -118,7 +118,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 /// or returns as-is if it's not encoded/compressed.
 fn decode_maybe_binary(body: String) -> String {
     // check for presence of { at the beginning of the doc to determine if it's JSON or Base58
-    if body.len() == 0 || body.trim_start().starts_with("{") {
+    if body.is_empty() || body.trim_start().starts_with('{') {
         // looks like JSON - return as-is
         return body;
     }
@@ -141,13 +141,13 @@ fn decode_maybe_binary(body: String) -> String {
     String::from_utf8(decoded).expect("Failed to convert decompressed payload to UTF8")
 }
 
-async fn purge_response_queue(client: &SqsClient, response_queue_url: &String) -> Result<(), Error> {
+async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> Result<(), Error> {
     debug!("Purging the queue, one msg at a time.");
     loop {
         let resp = client
             .receive_message(ReceiveMessageRequest {
                 max_number_of_messages: Some(10),
-                queue_url: response_queue_url.clone(),
+                queue_url: response_queue_url.to_string(),
                 wait_time_seconds: Some(0),
                 ..Default::default()
             })
@@ -172,7 +172,7 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &String) -
             // delete it from the queue
             client
                 .delete_message(DeleteMessageRequest {
-                    queue_url: response_queue_url.clone(),
+                    queue_url: response_queue_url.to_string(),
                     receipt_handle: msg.receipt_handle.as_ref().expect("Failed to get msg receipt").into(),
                 })
                 .await?;

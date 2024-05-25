@@ -16,7 +16,7 @@ tokio = { version = "1.14", features = ["macros", "io-util", "sync", "rt-multi-t
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 flate2 = "1.0"
-bs58 = "0.4"
+bs58 = "0.5"
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
 log = "0.4"
