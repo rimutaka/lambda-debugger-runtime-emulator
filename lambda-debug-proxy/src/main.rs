@@ -1,8 +1,7 @@
+use aws_sdk_sqs::Client as SqsClient;
 use flate2::read::GzDecoder;
 use lambda_debug_proxy_client::{init_tracing, RequestPayload};
 use lambda_runtime::{service_fn, Error, LambdaEvent};
-use rusoto_core::region::Region;
-use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde_json::Value;
 use std::env::var;
 use std::io::Read;
@@ -27,9 +26,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 
     debug!("ReqQ URL: {}", request_queue_url);
 
-    let region = Region::default();
-    debug!("Region: {:?}", region);
-    let client = SqsClient::new(region);
+    let client = SqsClient::new(&aws_config::load_from_env().await);
 
     // Sending part
     let request_payload = RequestPayload { event, ctx };
@@ -38,11 +35,10 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     debug!("Message body: {}", message_body);
 
     let send_result = client
-        .send_message(SendMessageRequest {
-            message_body,
-            queue_url: request_queue_url,
-            ..Default::default()
-        })
+        .send_message()
+        .set_message_body(Some(message_body))
+        .set_queue_url(Some(request_queue_url.to_string()))
+        .send()
         .await?;
 
     let msg_id = send_result.message_id.unwrap_or_default();
@@ -59,12 +55,11 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         loop {
             debug!("20s loop");
             let resp = client
-                .receive_message(ReceiveMessageRequest {
-                    max_number_of_messages: Some(1),
-                    queue_url: response_queue_url.clone(),
-                    wait_time_seconds: Some(20),
-                    ..Default::default()
-                })
+                .receive_message()
+                .max_number_of_messages(1)
+                .set_queue_url(Some(request_queue_url.to_string()))
+                .set_wait_time_seconds(Some(20))
+                .send()
                 .await?;
 
             // wait until a message arrives or the function is killed by AWS
@@ -98,10 +93,10 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 
             // delete it from the queue so it's not picked up again
             client
-                .delete_message(DeleteMessageRequest {
-                    queue_url: response_queue_url.clone(),
-                    receipt_handle,
-                })
+                .delete_message()
+                .set_queue_url(Some(response_queue_url.to_string()))
+                .set_receipt_handle(Some(receipt_handle))
+                .send()
                 .await?;
             debug!("Message deleted");
 
@@ -145,12 +140,11 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
     debug!("Purging the queue, one msg at a time.");
     loop {
         let resp = client
-            .receive_message(ReceiveMessageRequest {
-                max_number_of_messages: Some(10),
-                queue_url: response_queue_url.to_string(),
-                wait_time_seconds: Some(0),
-                ..Default::default()
-            })
+            .receive_message()
+            .max_number_of_messages(10)
+            .set_queue_url(Some(response_queue_url.to_string()))
+            .set_wait_time_seconds(Some(0))
+            .send()
             .await?;
 
         // wait until a message arrives or the function is killed by AWS
@@ -171,10 +165,10 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
         for msg in msgs {
             // delete it from the queue
             client
-                .delete_message(DeleteMessageRequest {
-                    queue_url: response_queue_url.to_string(),
-                    receipt_handle: msg.receipt_handle.as_ref().expect("Failed to get msg receipt").into(),
-                })
+                .delete_message()
+                .set_queue_url(Some(response_queue_url.to_string()))
+                .set_receipt_handle(msg.receipt_handle)
+                .send()
                 .await?;
             debug!("Message deleted");
         }

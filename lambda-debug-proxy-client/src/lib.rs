@@ -1,9 +1,7 @@
-use bs58;
+use aws_sdk_sqs::Client as SqsClient;
 use flate2::read::GzEncoder;
 use flate2::Compression;
 use lambda_runtime::{Context, Error};
-use rusoto_core::region::Region;
-use rusoto_sqs::{DeleteMessageRequest, ReceiveMessageRequest, SendMessageRequest, Sqs, SqsClient};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env::var;
@@ -18,18 +16,17 @@ pub struct RequestPayload {
 }
 
 /// Reads a message from the specified SQS queue and returns the payload as Lambda structures
-pub async fn get_input(aws_region: &Region, request_queue_url: &str) -> Result<(RequestPayload, String), Error> {
-    let client = SqsClient::new(aws_region.clone());
+pub async fn get_input(request_queue_url: &str) -> Result<(RequestPayload, String), Error> {
+    let client = SqsClient::new(&aws_config::load_from_env().await);
 
     // start listening to the response
     loop {
         let resp = client
-            .receive_message(ReceiveMessageRequest {
-                max_number_of_messages: Some(1),
-                queue_url: request_queue_url.to_string(),
-                wait_time_seconds: Some(20),
-                ..Default::default()
-            })
+            .receive_message()
+            .max_number_of_messages(1)
+            .set_queue_url(Some(request_queue_url.to_string()))
+            .set_wait_time_seconds(Some(20))
+            .send()
             .await?;
 
         // wait until a message arrives or the function is killed by AWS
@@ -39,7 +36,7 @@ pub async fn get_input(aws_region: &Region, request_queue_url: &str) -> Result<(
 
         // an empty list returns when the queue wait time expires
         let msgs = resp.messages.expect("Failed to get list of messages");
-        if msgs.len() == 0 {
+        if msgs.is_empty() {
             continue;
         }
 
@@ -62,22 +59,20 @@ pub async fn get_input(aws_region: &Region, request_queue_url: &str) -> Result<(
 pub async fn send_output(
     response: Value,
     receipt_handle: String,
-    aws_region: &Region,
     request_queue_url: &str,
     response_queue_url: &str,
 ) -> Result<(), Error> {
-    let client = SqsClient::new(aws_region.clone());
+    let client = SqsClient::new(&aws_config::load_from_env().await);
 
     let response = compress_output(response.to_string());
 
     // SQS messages must be shorter than 262144 bytes
     if response.len() < 262144 {
         client
-            .send_message(SendMessageRequest {
-                message_body: response,
-                queue_url: response_queue_url.to_string(),
-                ..Default::default()
-            })
+            .send_message()
+            .set_message_body(Some(response))
+            .set_queue_url(Some(response_queue_url.to_string()))
+            .send()
             .await?;
     } else {
         info!("Message size: {}B, max allowed: 262144B", response.len());
@@ -85,10 +80,10 @@ pub async fn send_output(
 
     // delete the request msg from the queue so it cannot be replayed again
     client
-        .delete_message(DeleteMessageRequest {
-            queue_url: request_queue_url.to_string(),
-            receipt_handle,
-        })
+        .delete_message()
+        .set_queue_url(Some(request_queue_url.to_string()))
+        .set_receipt_handle(Some(receipt_handle))
+        .send()
         .await?;
 
     Ok(())
@@ -102,7 +97,10 @@ fn compress_output(response: String) -> String {
         return response;
     }
 
-    println!("Message size: {}B, max allowed: 262144B. Compressing...", response.len());
+    println!(
+        "Message size: {}B, max allowed: 262144B. Compressing...",
+        response.len()
+    );
 
     // try to decompress the body
     let mut gzipper = GzEncoder::new(response.as_bytes(), Compression::fast());

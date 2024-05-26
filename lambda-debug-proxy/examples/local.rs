@@ -62,47 +62,42 @@ async fn main() -> Result<(), Error> {
 mod proxy {
     use lambda_debug_proxy_client::{get_input, send_output};
     use lambda_runtime::{Error, LambdaEvent};
-    use rusoto_core::region::Region;
     use tracing::info;
 
-    const AWS_REGION: Region = Region::UsEast1; // replace with the region where SQS queues are located
     const REQUEST_QUEUE_URL_ENV: &str = "STM_HTML_LAMBDA_PROXY_REQ"; // create an env var with the queue URL (AWS -> local)
     const RESPONSE_QUEUE_URL_ENV: &str = "STM_HTML_LAMBDA_PROXY_RESP"; // create an env var with the queue URL (local -> AWS)
 
     pub(crate) async fn run() -> Result<(), Error> {
         let request_queue_url = std::env::var(REQUEST_QUEUE_URL_ENV)
-            .expect(&format!(
-                "Missing {} env var with the SQS request queue URL",
-                REQUEST_QUEUE_URL_ENV
-            ))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Missing {} env var with the SQS request queue URL",
+                    REQUEST_QUEUE_URL_ENV
+                )
+            })
             .trim()
             .to_string();
 
         let response_queue_url = std::env::var(RESPONSE_QUEUE_URL_ENV)
-            .expect(&format!(
-                "Missing {} env var with the SQS request queue URL",
-                RESPONSE_QUEUE_URL_ENV
-            ))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Missing {} env var with the SQS request queue URL",
+                    RESPONSE_QUEUE_URL_ENV
+                )
+            })
             .trim()
             .to_string();
 
         // an infinite loop that imitates Lambda runtime waiting and dispatching messages
         loop {
             // get event and context details from REQUEST queue
-            let (payload, receipt_handle) = get_input(&AWS_REGION, &request_queue_url).await?;
+            let (payload, receipt_handle) = get_input(&request_queue_url).await?;
             info!("New msg arrived");
             // invoke the handler - replace it with an invocation of your own handler
             let response = super::my_handler(LambdaEvent::new(payload.event, payload.ctx)).await?;
 
             // send back the response and delete the message from the queue
-            send_output(
-                response,
-                receipt_handle,
-                &AWS_REGION,
-                &request_queue_url,
-                &response_queue_url,
-            )
-            .await?;
+            send_output(response, receipt_handle, &request_queue_url, &response_queue_url).await?;
             info!("Msg sent");
         }
     }

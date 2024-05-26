@@ -11,8 +11,13 @@ keywords = ["AWS", "Lambda", "API"]
 readme = "../../README.md"
 
 [dependencies]
-lambda-debug-proxy-client = { path = "../lambda-debug-proxy-client"}
-tokio = { version = "1.14", features = ["macros", "io-util", "sync", "rt-multi-thread"] }
+lambda-debug-proxy-client = { path = "../lambda-debug-proxy-client" }
+tokio = { version = "1.14", features = [
+  "macros",
+  "io-util",
+  "sync",
+  "rt-multi-thread",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 flate2 = "1.0"
@@ -21,5 +26,6 @@ tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
 log = "0.4"
 lambda_runtime = { git = "https://github.com/awslabs/aws-lambda-rust-runtime.git" }
-rusoto_sqs = { version = "0.47", features = ["rustls"], default-features = false }
-rusoto_core = { version = "0.47", features = ["rustls"], default-features = false }
+aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-sqs = "1.27"
+aws-types = "1.3"
