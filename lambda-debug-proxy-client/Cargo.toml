@@ -2,7 +2,7 @@
 name = "lambda-debug-proxy-client"
 version = "0.2.0"
 authors = ["rimutaka <max@onebro.me>"]
-edition = "2018"
+edition = "2021"
 description = "AWS Lambda Runtime Proxy for local debugging"
 license = "Apache-2.0"
 repository = "https://github.com/rimutaka/lambda-debug-proxy"
@@ -24,7 +24,7 @@ bs58 = "0.5"
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
 log = "0.4"
-lambda_runtime = { git = "https://github.com/awslabs/aws-lambda-rust-runtime.git" }
+lambda_runtime = { git = "https://github.com/awslabs/aws-lambda-rust-runtime.git", default-features = false }
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 aws-sdk-sqs = "1.27"
 aws-types = "1.3"

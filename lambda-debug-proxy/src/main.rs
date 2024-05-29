@@ -12,7 +12,10 @@ use tracing::debug;
 async fn main() -> Result<(), Error> {
     init_tracing(None);
 
-    lambda_runtime::run(service_fn(my_handler)).await?;
+    if let Err(e) = lambda_runtime::run(service_fn(my_handler)).await {
+        debug!("Runtime error: {:?}", e);
+        return Err(Error::from(e));
+    }
 
     Ok(())
 }
@@ -34,12 +37,19 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let message_body = serde_json::to_string(&request_payload).expect("Failed to serialize event + context");
     debug!("Message body: {}", message_body);
 
-    let send_result = client
+    let send_result = match client
         .send_message()
         .set_message_body(Some(message_body))
         .set_queue_url(Some(request_queue_url.to_string()))
         .send()
-        .await?;
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            debug!("Error sending message: {:?}", e);
+            return Err(Error::from(e));
+        }
+    };
 
     let msg_id = send_result.message_id.unwrap_or_default();
     debug!("Sent with ID: {}", msg_id);
@@ -54,13 +64,20 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         // now start listening
         loop {
             debug!("20s loop");
-            let resp = client
+            let resp = match client
                 .receive_message()
                 .max_number_of_messages(1)
-                .set_queue_url(Some(request_queue_url.to_string()))
+                .set_queue_url(Some(response_queue_url.to_string()))
                 .set_wait_time_seconds(Some(20))
                 .send()
-                .await?;
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    debug!("Error receiving messages: {:?}", e);
+                    return Err(Error::from(e));
+                }
+            };
 
             // wait until a message arrives or the function is killed by AWS
             if resp.messages.is_none() {
@@ -73,6 +90,8 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             if msgs.is_empty() {
                 debug!("No messages yet");
                 continue;
+            } else {
+                debug!("Received {} messages", msgs.len());
             }
 
             // message arrived - grab its handle for future reference
@@ -92,12 +111,19 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             let body = decode_maybe_binary(body);
 
             // delete it from the queue so it's not picked up again
-            client
+            match client
                 .delete_message()
                 .set_queue_url(Some(response_queue_url.to_string()))
                 .set_receipt_handle(Some(receipt_handle))
                 .send()
-                .await?;
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    debug!("Error deleting messages: {:?}", e);
+                    return Err(Error::from(e));
+                }
+            };
             debug!("Message deleted");
 
             // return the contents of the message as JSON Value
@@ -139,13 +165,20 @@ fn decode_maybe_binary(body: String) -> String {
 async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> Result<(), Error> {
     debug!("Purging the queue, one msg at a time.");
     loop {
-        let resp = client
+        let resp = match client
             .receive_message()
             .max_number_of_messages(10)
             .set_queue_url(Some(response_queue_url.to_string()))
             .set_wait_time_seconds(Some(0))
             .send()
-            .await?;
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                debug!("Error receiving messages: {:?}", e);
+                return Err(Error::from(e));
+            }
+        };
 
         // wait until a message arrives or the function is killed by AWS
         if resp.messages.is_none() {
@@ -164,12 +197,19 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
 
         for msg in msgs {
             // delete it from the queue
-            client
+            match client
                 .delete_message()
                 .set_queue_url(Some(response_queue_url.to_string()))
                 .set_receipt_handle(msg.receipt_handle)
                 .send()
-                .await?;
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    debug!("Error deleting messages: {:?}", e);
+                    return Err(Error::from(e));
+                }
+            };
             debug!("Message deleted");
         }
     }
