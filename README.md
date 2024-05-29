@@ -36,13 +36,15 @@ cp ./target/x86_64-unknown-linux-gnu/release/lambda-debug-proxy ./bootstrap && z
 aws lambda update-function-code --region us-east-1 --function-name lambda-debug-proxy --zip-file fileb://proxy.zip
 ```
 
+You can build for other targets, e.g. `-musl` or `aarch64-`.
+
 ### Lambda config
 
-Create an empty Lambda function with `Custom runtime on Amazon Linux 2` and run the deployment script from the previous section. It will build and upload the code to AWS.
+Create an empty Lambda function with `Custom runtime on Amazon Linux 2023` or newer and run the deployment script from the previous section. It will build and upload the code to AWS.
 
 Recommended settings:
 
-- **Runtime**: Custom runtime on Amazon Linux 2
+- **Runtime**: Custom runtime on Amazon Linux 2023 or newer
 - **Memory (MB)**: 128
 - **Timeout**: 15min 0sec
 - **Reserved concurrency**: 1
@@ -107,7 +109,7 @@ Replace the names and IDs before using this policy:
 
 ### Client config
 
-The lambda code running on your local machine has to be wrapped into a client that reads the queue, de-serializes the payload into your required format, calls your lambda and sends the response back. It is the exact reverse of what the proxy function does. See [local.rs example](examples/local.rs) for a sample Rust implementation. It should be easy to port the sample wrapper into the language of your Lambda handler. There is no need to refactor the proxy.
+The lambda code running on your local machine has to be wrapped into a client that reads the queue, de-serializes the payload into your required format, calls your local lambda code and sends the response back to AWS. It is the exact reverse of what the proxy function does. See [local.rs example](examples/local.rs) for a sample Rust implementation. It should be easy to port the sample wrapper into the language of your Lambda handler. There is no need to refactor the proxy.
 
 #### Running the Rust client from `examples/local.rs`:
 
