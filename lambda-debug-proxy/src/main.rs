@@ -6,11 +6,13 @@ use serde_json::Value;
 use std::env::var;
 use std::io::Read;
 use std::str::FromStr;
-use tracing::debug;
+use tracing::{debug, info};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     init_tracing(None);
+
+    print_env_vars();
 
     if let Err(e) = lambda_runtime::run(service_fn(my_handler)).await {
         debug!("Runtime error: {:?}", e);
@@ -213,4 +215,25 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
             debug!("Message deleted");
         }
     }
+}
+
+/// Prints all environment variables to the log in the form of `export KEY=VALUE key2=value2`
+fn print_env_vars() {
+    let mut env_vars = Vec::<String>::with_capacity(30);
+    env_vars.push(" export".to_string()); // the space at the front is needed to keep EXPORT as the first item of the array
+    for (key, value) in std::env::vars() {
+        match key.as_str() {
+            "AWS_ACCESS_KEY_ID" | "AWS_SECRET_ACCESS_KEY" | "AWS_SESSION_TOKEN" => {
+                // do not log sensitive vars
+            }
+            _ => {
+                env_vars.push(format!("{}={}", key, value));
+            }
+        }
+    }
+
+    // the list is easier to deal with when sorted
+    env_vars.sort();
+
+    info!("{}", env_vars.join(" "));
 }

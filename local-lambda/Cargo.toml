@@ -1,0 +1,30 @@
+[package]
+name = "local-lambda"
+version = "0.2.0"
+authors = ["rimutaka <max@onebro.me>"]
+edition = "2021"
+description = "AWS Lambda Runtime Proxy for local debugging"
+license = "Apache-2.0"
+repository = "https://github.com/rimutaka/lambda-debug-proxy"
+categories = ["web-programming::http-server"]
+keywords = ["AWS", "Lambda", "API"]
+readme = "../README.md"
+
+[dependencies]
+tokio = { version = "1.16", features = [
+  "macros",
+  "io-util",
+  "sync",
+  "rt-multi-thread",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flate2 = "1.0"
+bs58 = "0.5"
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = "0.3"
+log = "0.4"
+lambda_runtime = { git = "https://github.com/awslabs/aws-lambda-rust-runtime.git" }
+aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-sqs = "1.27"
+aws-types = "1.3"
