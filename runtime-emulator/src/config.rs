@@ -1,4 +1,5 @@
 use core::net::SocketAddrV4;
+use log::info;
 use std::env::var;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
@@ -37,6 +38,8 @@ impl Config {
             }
             None => SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 9001),
         };
+
+        info!("Config loaded, req: {}, resp:{}", request_queue_url, response_queue_url);
 
         Self {
             lambda_api_listener,

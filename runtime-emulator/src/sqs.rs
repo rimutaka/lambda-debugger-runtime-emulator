@@ -10,9 +10,7 @@ use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-/// Our version of Lambda Context struct
-/// Rust runtime provides one, but it has no default implementation
-/// and lots of extra fields. It was easier to implement our own.
+/// An internal version of Lambda Context struct, similar to the one in the lambda_runtime crate.
 #[derive(Deserialize, Debug, Serialize)]
 #[serde(default)]
 pub(crate) struct Ctx {
@@ -24,6 +22,8 @@ pub(crate) struct Ctx {
     pub invoked_function_arn: String,
     /// From the context
     pub xray_trace_id: String,
+    // Rust runtime provides a comprehensive Context struct, but it has no default implementation
+    // and lots of extra fields. It was easier to implement our own.
 }
 
 // This is probably redundant as we should always have the context values coming from Lambda.
@@ -43,7 +43,7 @@ impl Default for Ctx {
 /// A local implementation of lambda_runtime::LambdaEvent<T>
 #[derive(Deserialize, Debug, Serialize)]
 pub(crate) struct RequestPayload {
-    pub event: Value,
+    pub event: Value, // using Value to extract some fields and pass the rest to the runtime
     pub ctx: Ctx,
 }
 
@@ -173,7 +173,10 @@ pub(crate) async fn send_output(response: String, receipt_handle: String) {
             panic!("Failed to send SQS response: {}", e);
         };
     } else {
-        info!("Message size is too big for SQS: {}B, max allowed: 262,144 bytes", response.len());
+        info!(
+            "Message size is too big for SQS: {}B, max allowed: 262,144 bytes",
+            response.len()
+        );
     }
 
     // delete the request msg from the queue so it cannot be replayed again

@@ -1,107 +1,56 @@
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
+use handlers::{api_error, api_next_invocation, api_response};
+use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::Error;
 use hyper::{Method, Request, Response};
 use hyper_util::rt::TokioIo;
 use regex::Regex;
+use std::cell::OnceCell;
 use std::env::var;
 use std::str::FromStr;
 use tokio::net::TcpListener;
-use tokio::time::{sleep, Duration};
-use tracing::{info, warn};
+use tracing::{error, info};
 
 mod config;
+mod handlers;
 mod sqs;
 
-async fn api_next_invocation() -> Response<BoxBody<Bytes, Error>> {
-    // get the next SQS message or wait for it to arrive
-    // this call will block until a message is available
-    let sqs_message = sqs::get_input().await;
-
-    info!("{}", sqs_message.payload);
-
-    Response::builder()
-        .status(hyper::StatusCode::OK)
-        .header("lambda-runtime-aws-request-id", sqs_message.receipt_handle)
-        .header("lambda-runtime-deadline-ms", sqs_message.ctx.deadline)
-        .header(
-            "lambda-runtime-invoked-function-arn",
-            sqs_message.ctx.invoked_function_arn,
-        )
-        .header("lambda-runtime-trace-id", sqs_message.ctx.xray_trace_id)
-        .body(full(sqs_message.payload))
-        .expect("Failed to create a response")
-}
-
-async fn api_response(response: Bytes, receipt_handle: String) -> Response<BoxBody<Bytes, Error>> {
-    let sqs_payload = match String::from_utf8(response.as_ref().to_vec()) {
-        Ok(v) => v,
-        Err(e) => {
-            panic!(
-                "Non-UTF-8 response from Lambda. {:?}\n{}",
-                e,
-                hex::encode(response.as_ref())
-            );
-        }
-    };
-
-    info!("Lambda response: {sqs_payload}");
-
-    sqs::send_output(sqs_payload, receipt_handle).await;
-
-    Response::builder()
-        .status(hyper::StatusCode::OK)
-        .body(empty())
-        .expect("Failed to create a response")
-}
-
-async fn api_error(resp: Bytes) -> Response<BoxBody<Bytes, Error>> {
-    match String::from_utf8(resp.as_ref().to_vec()) {
-        Ok(v) => {
-            info!("Lambda error: {v}");
-        }
-        Err(e) => {
-            warn!(
-                "Non-UTF-8 error response from Lambda. {:?}\n{}",
-                e,
-                hex::encode(resp.as_ref())
-            );
-        }
-    }
-
-    info!("Ctlr-C your lambda or this runtime within 10s to avoid a rerun");
-    sleep(Duration::from_secs(10)).await;
-
-    // lambda allows for more informative error responses, but this may be enough for now
-    Response::builder()
-        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-        .body(empty())
-        .expect("Failed to create a response")
-}
-
+/// The handler function converted into a Tower service to run in the background
+/// and serve the incoming HTTP requests from the local lambda.
 async fn lambda_api_handler(
     req: Request<hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     info!("Request URL: {:?}", req.uri());
 
-    // Next invocation (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-next)
     if req.method() == Method::GET && req.uri().path().ends_with("/invocation/next") {
+        // Next invocation - the local lambda sends this requests and waits for an invocation with no time limit.
+        // We simulate this by waiting for a message to arrive in the SQS queue.
+        // See https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-next
         return Ok(api_next_invocation().await);
     }
 
-    // There should be no other GET request types
     if req.method() != Method::POST {
-        panic!("Invalid request: {:?}", req);
+        // There should be no other GET request types other than the above.
+        // It is a hard error is there is another type of GET request.
+        panic!("Invalid GET request: {:?}", req);
     }
 
-    // Invocation response (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-response)
     if req.uri().path().ends_with("/response") {
-        // the request ID in the URL is the receipt handle for SQS
-        // path template: /runtime/invocation/AwsRequestId/response
-        let regex = Regex::new(r"/runtime/invocation/(.+)/response").expect("Invalid response URL regex. It's a bug.");
+        // Invocation response is sent by the local lambda when it successfully completed processing.
+        // We forward the response to the SQS queue where it is picked up by the remote proxy lambda
+        // and forwarded to the original caller, e.g. API Gateway.
+        // See https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-response
 
+        // The regex extracts the receipt handle from the path, e.g. /runtime/invocation/[aws-req-id]/response
+        // where the request ID in the URL is the receipt handle for SQS - it is not the actual lambda request ID.
+        // We need to store the receipt handle somewhere and placing it into the request-id param seems like an easy way to do it
+        // because the local lambda will return it with the response.
+        // The receipt handle can be a long string with /, - and other non-alphanumeric characters.
+        let cell = OnceCell::new();
+        let regex = cell.get_or_init(|| {
+            Regex::new(r"/runtime/invocation/(.+)/response").expect("Invalid response URL regex. It's a bug.")
+        });
         let receipt_handle = regex
             .captures(req.uri().path())
             .unwrap_or_else(|| panic!("URL parsing regex failed on: {:?}. It' a bug", req.uri()))
@@ -115,6 +64,7 @@ async fn lambda_api_handler(
             .as_str()
             .to_owned();
 
+        // convert the lambda response to bytes
         let bytes = match req.into_body().collect().await {
             Ok(v) => v.to_bytes(),
             Err(e) => panic!("Failed to read lambda response: {:?}", e),
@@ -122,11 +72,11 @@ async fn lambda_api_handler(
         return Ok(api_response(bytes, receipt_handle).await);
     }
 
-    // Initialization error (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-initerror) and
-    // Invocation error (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-invokeerror)
-    // are rolled together into a single handler because it is not clear how to handle errors
-    // and if the error should be propagated upstream
     if req.uri().path().ends_with("/error") {
+        // Initialization error (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-initerror) and
+        // Invocation error (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-invokeerror)
+        // are rolled together into a single handler because it is not clear how to handle errors
+        // and if the error should be propagated upstream
         let bytes = match req.into_body().collect().await {
             Ok(v) => v.to_bytes(),
             Err(e) => panic!("Failed to read lambda response: {:?}", e),
@@ -137,44 +87,29 @@ async fn lambda_api_handler(
     panic!("Unknown request type: {:?}", req);
 }
 
-// We create some utility functions to make Empty and Full bodies
-// fit our broadened Response body type.
-fn empty() -> BoxBody<Bytes, hyper::Error> {
-    Empty::<Bytes>::new().map_err(|never| match never {}).boxed()
-}
-
-fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-    Full::new(chunk.into()).map_err(|never| match never {}).boxed()
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+    init_tracing(None); // use the hardcoded default for now
 
     let config = config::Config::from_env();
 
+    // bind to a TCP port and start a loop to continuously accept incoming connections
     info!("Listening on http://{}", config.lambda_api_listener);
-
-    // We create a TcpListener and bind it to 127.0.0.1:3000
     let listener = TcpListener::bind(config.lambda_api_listener).await?;
 
-    // We start a loop to continuously accept incoming connections
     loop {
         let (stream, _) = listener.accept().await?;
-
-        // Use an adapter to access something implementing `tokio::io` traits as if they implement
-        // `hyper::rt` IO traits.
         let io = TokioIo::new(stream);
 
         // Spawn a tokio task to serve multiple connections concurrently
         tokio::task::spawn(async move {
-            // Finally, we bind the incoming connection to our `hello` service
+            // bind the incoming connection to lambda_api_handler service
             if let Err(err) = http1::Builder::new()
-                // `service_fn` converts our function in a `Service`
+                // `service_fn` comes from Tower, convert the handler function into a service
                 .serve_connection(io, service_fn(lambda_api_handler))
                 .await
             {
-                eprintln!("Error serving TCP connection: {:?}", err);
+                error!("Error serving TCP connection: {:?}", err);
             }
         });
     }
@@ -182,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 /// A standard routine for initializing a tracing provider for use in `main` and inside test functions.
 /// * tracing_level: pass None if not known in advance and should be taken from an env var
-pub fn init_tracing(tracing_level: Option<tracing::Level>) {
+fn init_tracing(tracing_level: Option<tracing::Level>) {
     // get the log level from an env var
     let tracing_level = match tracing_level {
         Some(v) => v,
@@ -195,7 +130,8 @@ pub fn init_tracing(tracing_level: Option<tracing::Level>) {
     // init the logger with the specified level
     tracing_subscriber::fmt()
         .with_max_level(tracing_level)
-        .with_ansi(false)
-        .without_time()
+        .with_ansi(true)
+        // .without_time()
+        .compact()
         .init();
 }
