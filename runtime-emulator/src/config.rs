@@ -27,7 +27,7 @@ impl Config {
 
         let lambda_api_listener = match listener_ip_str.split_once(':') {
             Some((ip, port)) => {
-                let listener_ip = std::net::Ipv4Addr::from_str(&ip).expect(
+                let listener_ip = std::net::Ipv4Addr::from_str(ip).expect(
                     "Invalid IP address in AWS_LAMBDA_RUNTIME_API env var. Must be a valid IP4, e.g. 127.0.0.1",
                 );
                 let listener_port = port.parse::<u16>().expect(
