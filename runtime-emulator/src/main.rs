@@ -1,12 +1,9 @@
-use handlers::{api_error, api_next_invocation, api_response};
-use http_body_util::{combinators::BoxBody, BodyExt};
+use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response};
 use hyper_util::rt::TokioIo;
-use regex::Regex;
-use std::cell::OnceCell;
 use std::env::var;
 use std::str::FromStr;
 use tokio::net::TcpListener;
@@ -24,64 +21,20 @@ async fn lambda_api_handler(
     info!("Request URL: {:?}", req.uri());
 
     if req.method() == Method::GET && req.uri().path().ends_with("/invocation/next") {
-        // Next invocation - the local lambda sends this requests and waits for an invocation with no time limit.
-        // We simulate this by waiting for a message to arrive in the SQS queue.
-        // See https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-next
-        return Ok(api_next_invocation().await);
+        return Ok(handlers::next_invocation::handler().await);
     }
 
     if req.method() != Method::POST {
         // There should be no other GET request types other than the above.
-        // It is a hard error is there is another type of GET request.
         panic!("Invalid GET request: {:?}", req);
     }
 
     if req.uri().path().ends_with("/response") {
-        // Invocation response is sent by the local lambda when it successfully completed processing.
-        // We forward the response to the SQS queue where it is picked up by the remote proxy lambda
-        // and forwarded to the original caller, e.g. API Gateway.
-        // See https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-response
-
-        // The regex extracts the receipt handle from the path, e.g. /runtime/invocation/[aws-req-id]/response
-        // where the request ID in the URL is the receipt handle for SQS - it is not the actual lambda request ID.
-        // We need to store the receipt handle somewhere and placing it into the request-id param seems like an easy way to do it
-        // because the local lambda will return it with the response.
-        // The receipt handle can be a long string with /, - and other non-alphanumeric characters.
-        let cell = OnceCell::new();
-        let regex = cell.get_or_init(|| {
-            Regex::new(r"/runtime/invocation/(.+)/response").expect("Invalid response URL regex. It's a bug.")
-        });
-        let receipt_handle = regex
-            .captures(req.uri().path())
-            .unwrap_or_else(|| panic!("URL parsing regex failed on: {:?}. It' a bug", req.uri()))
-            .get(1)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Request URL does not conform to /runtime/invocation/AwsRequestId/response: {:?}",
-                    req.uri()
-                )
-            })
-            .as_str()
-            .to_owned();
-
-        // convert the lambda response to bytes
-        let bytes = match req.into_body().collect().await {
-            Ok(v) => v.to_bytes(),
-            Err(e) => panic!("Failed to read lambda response: {:?}", e),
-        };
-        return Ok(api_response(bytes, receipt_handle).await);
+        return Ok(handlers::lambda_response::handler(req).await);
     }
 
     if req.uri().path().ends_with("/error") {
-        // Initialization error (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-initerror) and
-        // Invocation error (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-invokeerror)
-        // are rolled together into a single handler because it is not clear how to handle errors
-        // and if the error should be propagated upstream
-        let bytes = match req.into_body().collect().await {
-            Ok(v) => v.to_bytes(),
-            Err(e) => panic!("Failed to read lambda response: {:?}", e),
-        };
-        return Ok(api_error(bytes).await);
+        return Ok(handlers::lambda_error::handler(req).await);
     }
 
     panic!("Unknown request type: {:?}", req);
