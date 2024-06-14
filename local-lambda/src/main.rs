@@ -2,7 +2,7 @@ use lambda_runtime::{service_fn, tracing, Error, LambdaEvent};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct Request {
     command: String,
 }
@@ -24,6 +24,8 @@ async fn main() -> Result<(), Error> {
 }
 
 pub(crate) async fn my_handler(event: LambdaEvent<Request>) -> Result<Response, Error> {
+    info!("Received event: {:?}", event);
+
     // extract some useful info from the request
     let command = event.payload.command;
 

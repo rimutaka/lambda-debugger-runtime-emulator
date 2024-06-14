@@ -10,6 +10,15 @@ categories = ["web-programming::http-server"]
 keywords = ["AWS", "Lambda", "API"]
 readme = "../README.md"
 
+[lib]
+# needed to export types
+name = "runtime_emulator_types"
+path = "src/types.rs"
+
+[[bin]]
+name = "runtime_emulator"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { version = "1.16", features = [
   "macros",

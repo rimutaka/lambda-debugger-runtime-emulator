@@ -1,7 +1,6 @@
 [workspace]
 members = [
-    "lambda-debug-proxy",
-    "lambda-debug-proxy-client",
+    "proxy-lambda",
     "runtime-emulator",
     "local-lambda",
 ]

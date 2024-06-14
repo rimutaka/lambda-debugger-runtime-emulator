@@ -1,7 +1,7 @@
 use aws_sdk_sqs::Client as SqsClient;
 use flate2::read::GzDecoder;
-use lambda_debug_proxy_client::{init_tracing, RequestPayload};
 use lambda_runtime::{service_fn, Error, LambdaEvent};
+use runtime_emulator_types::RequestPayload;
 use serde_json::Value;
 use std::env::var;
 use std::io::Read;
@@ -24,6 +24,7 @@ async fn main() -> Result<(), Error> {
 
 async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let (event, ctx) = event.into_parts();
+
     debug!("Event: {:?}", event);
     debug!("Context: {:?}", ctx);
 
@@ -236,4 +237,25 @@ fn print_env_vars() {
     env_vars.sort();
 
     info!("{}", env_vars.join(" "));
+}
+
+/// A standard routine for initializing a tracing provider for use in `main` and inside test functions.
+/// * tracing_level: pass None if not known in advance and should be taken from an env var
+fn init_tracing(tracing_level: Option<tracing::Level>) {
+    // get the log level from an env var
+    let tracing_level = match tracing_level {
+        Some(v) => v,
+        None => match var("LAMBDA_PROXY_TRACING_LEVEL") {
+            Err(_) => tracing::Level::INFO,
+            Ok(v) => tracing::Level::from_str(&v).expect("Invalid tracing level. Use trace, debug, error or info"),
+        },
+    };
+
+    // init the logger with the specified level
+    tracing_subscriber::fmt()
+        .with_max_level(tracing_level)
+        .with_ansi(true)
+        // .without_time()
+        .compact()
+        .init();
 }

@@ -25,7 +25,13 @@ pub(crate) async fn handler() -> Response<BoxBody<Bytes, Error>> {
             "lambda-runtime-invoked-function-arn",
             sqs_message.ctx.invoked_function_arn,
         )
-        .header("lambda-runtime-trace-id", sqs_message.ctx.xray_trace_id)
+        .header(
+            "lambda-runtime-trace-id",
+            sqs_message.ctx.xray_trace_id.unwrap_or_else(|| {
+                "Root=0-00000000-000000000000000000000000;Parent=0000000000000000;Sampled=0;Lineage=00000000:0"
+                    .to_owned()
+            }),
+        )
         .body(full(sqs_message.payload))
         .expect("Failed to create a response")
 }

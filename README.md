@@ -28,11 +28,11 @@ It is possible for the response to arrive too late because either the Lambda Run
 
 ### Deployment
 
-Replace `--region us-east-1` and `--function-name lambda-debug-proxy` with your values.
+Replace `--region us-east-1` and `--function-name lambda-debug-proxy` with your values and run this script from the project root:
 
 ```
 cargo build --release --target x86_64-unknown-linux-gnu
-cp ./target/x86_64-unknown-linux-gnu/release/lambda-debug-proxy ./bootstrap && zip proxy.zip bootstrap && rm bootstrap
+cp ./target/x86_64-unknown-linux-gnu/release/proxy-lambda ./bootstrap && zip proxy.zip bootstrap && rm bootstrap
 aws lambda update-function-code --region us-east-1 --function-name lambda-debug-proxy --zip-file fileb://proxy.zip
 ```
 

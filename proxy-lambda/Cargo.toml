@@ -1,9 +1,9 @@
 [package]
-name = "lambda-debug-proxy"
+name = "proxy-lambda"
 version = "0.2.0"
 authors = ["rimutaka <max@onebro.me>"]
 edition = "2021"
-description = "AWS Lambda Runtime Proxy for local debugging"
+description = "A proxy AWS Lambda function for forwarding invocations to a locally run lambda for debugging. To be deployed to AWS in place of the function you wan to debug. Requires SQS access."
 license = "Apache-2.0"
 repository = "https://github.com/rimutaka/lambda-debug-proxy"
 categories = ["web-programming::http-server"]
@@ -11,7 +11,7 @@ keywords = ["AWS", "Lambda", "API"]
 readme = "../../README.md"
 
 [dependencies]
-lambda-debug-proxy-client = { path = "../lambda-debug-proxy-client" }
+runtime-emulator = { path = "../runtime-emulator" }
 tokio = { version = "1.14", features = [
   "macros",
   "io-util",
@@ -25,7 +25,7 @@ bs58 = "0.5"
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
 log = "0.4"
-lambda_runtime = { git = "https://github.com/awslabs/aws-lambda-rust-runtime.git", default-features = false}
+lambda_runtime = { version = "0.11", default-features = false }
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 aws-sdk-sqs = "1.27"
 aws-types = "1.3"
