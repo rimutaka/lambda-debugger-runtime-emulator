@@ -18,9 +18,9 @@ impl Config {
     /// Uses default values where possible.
     /// Panics if the required environment variables are not set.
     pub fn from_env() -> Self {
-        let request_queue_url = var("LAMBDA_PROXY_REQ_QUEUE_URL").expect("Missing LAMBDA_PROXY_REQ_QUEUE_URL env var");
+        let request_queue_url = var("LAMBDA_PROXY_REQ_QUEUE_URL").expect("Missing LAMBDA_PROXY_REQ_QUEUE_URL env var. See env-minimal.sh for more info.");
         let response_queue_url =
-            var("LAMBDA_PROXY_RESP_QUEUE_URL").expect("Missing LAMBDA_PROXY_RESP_QUEUE_URL env var");
+            var("LAMBDA_PROXY_RESP_QUEUE_URL").expect("Missing LAMBDA_PROXY_RESP_QUEUE_URL env var. See env-minimal.sh for more info.");
 
         // this one can do with a default value
         let listener_ip_str = var("AWS_LAMBDA_RUNTIME_API")
