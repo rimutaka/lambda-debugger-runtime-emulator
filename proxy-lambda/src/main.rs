@@ -6,11 +6,16 @@ use serde_json::Value;
 use std::env::var;
 use std::io::Read;
 use std::str::FromStr;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    init_tracing(None);
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
+        .with_ansi(false)
+        .without_time()
+        .compact()
+        .init();
 
     print_env_vars();
 
@@ -28,7 +33,16 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     debug!("Event: {:?}", event);
     debug!("Context: {:?}", ctx);
 
-    let request_queue_url = var("LAMBDA_PROXY_REQ_QUEUE_URL").expect("Missing LAMBDA_PROXY_REQ_QUEUE_URL");
+    let request_queue_url = match var("LAMBDA_PROXY_REQ_QUEUE_URL") {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                "LAMBDA_PROXY_REQ_QUEUE_URL env var should contain the URL of the request queue. Env var error: {}",
+                e
+            );
+            return Err(Error::from("Config error"));
+        }
+    };
 
     debug!("ReqQ URL: {}", request_queue_url);
 
@@ -37,7 +51,14 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     // Sending part
     let request_payload = RequestPayload { event, ctx };
 
-    let message_body = serde_json::to_string(&request_payload).expect("Failed to serialize event + context");
+    let message_body = match serde_json::to_string(&request_payload) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed to serialize event + context: {:?}", e);
+            return Err(Error::from(e));
+        }
+    };
+
     debug!("Message body: {}", message_body);
 
     let send_result = match client
@@ -83,35 +104,49 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             };
 
             // wait until a message arrives or the function is killed by AWS
-            if resp.messages.is_none() {
-                debug!("No messages yet");
-                continue;
-            }
-
             // an empty list returns when the queue wait time expires
-            let mut msgs = resp.messages.expect("Failed to get list of messages");
+            let mut msgs = match resp.messages {
+                Some(v) => v,
+                None => {
+                    debug!("No messages yet: message list is None");
+                    continue;
+                }
+            };
             if msgs.is_empty() {
-                debug!("No messages yet");
+                debug!("No messages yet: empty message list");
                 continue;
             } else {
                 debug!("Received {} messages", msgs.len());
             }
 
             // message arrived - grab its handle for future reference
-            let receipt_handle = msgs[0]
-                .receipt_handle
-                .as_ref()
-                .expect("Failed to get msg receipt")
-                .to_owned();
+            let receipt_handle = match msgs[0].receipt_handle.as_ref() {
+                Some(v) => v,
+                None => {
+                    return Err(Error::from("Failed to get msg receipt"));
+                }
+            }
+            .to_owned();
 
-            let body = msgs
-                .pop()
-                .expect("msgs Vec should have been pre-checked for len(). It's a bug.")
-                .body
-                .expect("Failed to get message body");
+            let body = match match msgs.pop() {
+                Some(v) => v,
+                None => {
+                    return Err(Error::from(
+                        "msgs Vec should have been pre-checked for is_empty(). It's a bug.",
+                    ));
+                }
+            }
+            .body
+            {
+                Some(v) => v,
+                None => {
+                    return Err(Error::from("Failed to get message body"));
+                }
+            };
+
             debug!("Response:{}", body);
 
-            let body = decode_maybe_binary(body);
+            let body = decode_maybe_binary(body)?;
 
             // delete it from the queue so it's not picked up again
             match client
@@ -140,29 +175,43 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 
 /// Checks if the message is a Base58 encoded compressed text and either decodes/decompresses it
 /// or returns as-is if it's not encoded/compressed.
-fn decode_maybe_binary(body: String) -> String {
+fn decode_maybe_binary(body: String) -> Result<String, Error> {
     // check for presence of { at the beginning of the doc to determine if it's JSON or Base58
     if body.is_empty() || body.trim_start().starts_with('{') {
         // looks like JSON - return as-is
-        return body;
+        return Ok(body);
     }
 
     // try to decode base58
-    let body_decoded = bs58::decode(&body)
-        .into_vec()
-        .expect("Failed to decode from maybe base58");
+    let body_decoded = match bs58::decode(&body).into_vec() {
+        Ok(v) => v,
+        Err(e) => {
+            debug!("Failed to decode from maybe base58");
+            return Err(Error::from(e));
+        }
+    };
 
     // try to decompress the body
     let mut decoder = GzDecoder::new(body_decoded.as_slice());
     let mut decoded: Vec<u8> = Vec::new();
-    let len = decoder
-        .read_to_end(&mut decoded)
-        .expect("Failed to decompress the payload");
+    let len = match decoder.read_to_end(&mut decoded) {
+        Ok(v) => v,
+        Err(e) => {
+            debug!("Failed to decompress the payload");
+            return Err(Error::from(e));
+        }
+    };
 
     debug!("Decoded {} bytes", len);
 
-    // return the bytes converted into a lossy unicode string
-    String::from_utf8(decoded).expect("Failed to convert decompressed payload to UTF8")
+    // return the bytes converted into a lossy unicode string or an error
+    match String::from_utf8(decoded) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            debug!("Failed to convert decompressed payload to UTF8");
+            Err(Error::from(e))
+        }
+    }
 }
 
 async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> Result<(), Error> {
@@ -183,14 +232,15 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
             }
         };
 
-        // wait until a message arrives or the function is killed by AWS
-        if resp.messages.is_none() {
-            debug!("No stale messages (resp.messages.is_none)");
-            return Ok(());
-        }
-
         // an empty list returns when the queue wait time expires
-        let msgs = resp.messages.expect("Failed to get list of messages");
+        let msgs = match resp.messages {
+            Some(v) => v,
+            None => {
+                debug!("No stale messages in purge queue");
+                return Ok(());
+            }
+        };
+
         if msgs.is_empty() {
             debug!("No stale messages (resp.messages.is_empty)");
             return Ok(());
@@ -237,25 +287,4 @@ fn print_env_vars() {
     env_vars.sort();
 
     info!("{}", env_vars.join(" "));
-}
-
-/// A standard routine for initializing a tracing provider for use in `main` and inside test functions.
-/// * tracing_level: pass None if not known in advance and should be taken from an env var
-fn init_tracing(tracing_level: Option<tracing::Level>) {
-    // get the log level from an env var
-    let tracing_level = match tracing_level {
-        Some(v) => v,
-        None => match var("LAMBDA_PROXY_TRACING_LEVEL") {
-            Err(_) => tracing::Level::INFO,
-            Ok(v) => tracing::Level::from_str(&v).expect("Invalid tracing level. Use trace, debug, error or info"),
-        },
-    };
-
-    // init the logger with the specified level
-    tracing_subscriber::fmt()
-        .with_max_level(tracing_level)
-        .with_ansi(true)
-        // .without_time()
-        .compact()
-        .init();
 }
