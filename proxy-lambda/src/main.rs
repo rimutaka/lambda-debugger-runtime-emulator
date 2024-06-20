@@ -33,14 +33,30 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     debug!("Event: {:?}", event);
     debug!("Context: {:?}", ctx);
 
-    let request_queue_url = match var("LAMBDA_PROXY_REQ_QUEUE_URL") {
+    // check if the request queue URL was specified via an env var
+    // if not, use the default queue URL
+    let request_queue_url = match var("PROXY_LAMBDA_REQ_QUEUE_URL") {
         Ok(v) => v,
-        Err(e) => {
-            error!(
-                "LAMBDA_PROXY_REQ_QUEUE_URL env var should contain the URL of the request queue. Env var error: {}",
-                e
+        Err(_e) => {
+            // the env var does not exist - try to use the default queue URL
+            // there shouldn't be any other env var errors, so the error type can be ignored
+            let arn = ctx.invoked_function_arn.split(':').collect::<Vec<&str>>();
+            // arn example: arn:aws:lambda:us-east-1:512295225992:function:my-lambda
+            if arn.len() != 7 {
+                error!(
+                    "ARN should have 7 parts, but it has {}: {}",
+                    arn.len(),
+                    ctx.invoked_function_arn
+                );
+                return Err(Error::from("Context error"));
+            }
+
+            debug!(
+                "Reading from default PROXY_LAMBDA_REQ queue name. Use PROXY_LAMBDA_REQ_QUEUE_URL env var to specify a different queue. URL."
             );
-            return Err(Error::from("Config error"));
+
+            // https://sqs.us-east-1.amazonaws.com/512295225992/PROXY_LAMBDA_REQ
+            format!("https://sqs.{}.amazonaws.com/{}/PROXY_LAMBDA_REQ", arn[3], arn[4])
         }
     };
 
@@ -71,7 +87,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         Ok(v) => v,
         Err(e) => {
             debug!("Error sending message: {:?}", e);
-            return Err(Error::from(e));
+            return Err(Error::from("Failed to send message"));
         }
     };
 
@@ -99,7 +115,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
                 Ok(v) => v,
                 Err(e) => {
                     debug!("Error receiving messages: {:?}", e);
-                    return Err(Error::from(e));
+                    return Err(Error::from("Failed to receive messages"));
                 }
             };
 
@@ -159,7 +175,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
                 Ok(v) => v,
                 Err(e) => {
                     debug!("Error deleting messages: {:?}", e);
-                    return Err(Error::from(e));
+                    return Err(Error::from("Error deleting messages"));
                 }
             };
             debug!("Message deleted");
@@ -186,8 +202,8 @@ fn decode_maybe_binary(body: String) -> Result<String, Error> {
     let body_decoded = match bs58::decode(&body).into_vec() {
         Ok(v) => v,
         Err(e) => {
-            debug!("Failed to decode from maybe base58");
-            return Err(Error::from(e));
+            debug!("Failed to decode from maybe base58: {:?}", e);
+            return Err(Error::from("Failed to decode from maybe base58"));
         }
     };
 
@@ -197,8 +213,8 @@ fn decode_maybe_binary(body: String) -> Result<String, Error> {
     let len = match decoder.read_to_end(&mut decoded) {
         Ok(v) => v,
         Err(e) => {
-            debug!("Failed to decompress the payload");
-            return Err(Error::from(e));
+            debug!("Failed to decompress the payload: {:?}", e);
+            return Err(Error::from("Failed to decompress the payload"));
         }
     };
 
@@ -208,8 +224,8 @@ fn decode_maybe_binary(body: String) -> Result<String, Error> {
     match String::from_utf8(decoded) {
         Ok(v) => Ok(v),
         Err(e) => {
-            debug!("Failed to convert decompressed payload to UTF8");
-            Err(Error::from(e))
+            debug!("Failed to convert decompressed payload to UTF8: {:?}", e);
+            Err(Error::from("Failed to convert decompressed payload to UTF8"))
         }
     }
 }
@@ -228,7 +244,7 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
             Ok(v) => v,
             Err(e) => {
                 debug!("Error receiving messages: {:?}", e);
-                return Err(Error::from(e));
+                return Err(Error::from("Error receiving messages"));
             }
         };
 
@@ -260,7 +276,7 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
                 Ok(v) => v,
                 Err(e) => {
                     debug!("Error deleting messages: {:?}", e);
-                    return Err(Error::from(e));
+                    return Err(Error::from("Error deleting messages"));
                 }
             };
             debug!("Message deleted");
