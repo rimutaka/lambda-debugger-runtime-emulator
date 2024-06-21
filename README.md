@@ -55,7 +55,7 @@ the _proxy_lambda_ returns it to the caller.
 
 ### SQS configuration
 
-Create `PROXY_LAMBDA_REQ` and `PROXY_LAMBDA_RESP` SQS queues.
+Create `proxy_lambda_req` and `proxy_lambda_resp` SQS queues.
 You may use different names, but it is easier to use the defaults provided here.
 
 Recommended settings:
@@ -86,7 +86,7 @@ Replace _Principal_ and _Resource_ IDs with your values before adding this polic
         "sqs:ReceiveMessage",
         "sqs:SendMessage"
       ],
-      "Resource": "arn:aws:sqs:us-east-1:512295225992:PROXY_LAMBDA_REQ"
+      "Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_req"
     }
   ]
 }

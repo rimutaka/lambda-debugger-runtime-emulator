@@ -52,11 +52,11 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             }
 
             debug!(
-                "Reading from default PROXY_LAMBDA_REQ queue name. Use PROXY_LAMBDA_REQ_QUEUE_URL env var to specify a different queue. URL."
+                "Reading from default proxy_lambda_req queue name. Use PROXY_LAMBDA_REQ_QUEUE_URL env var to specify a different queue. URL."
             );
 
             // https://sqs.us-east-1.amazonaws.com/512295225992/PROXY_LAMBDA_REQ
-            format!("https://sqs.{}.amazonaws.com/{}/PROXY_LAMBDA_REQ", arn[3], arn[4])
+            format!("https://sqs.{}.amazonaws.com/{}/proxy_lambda_req", arn[3], arn[4])
         }
     };
 
@@ -96,7 +96,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 
     // start listening to the response if the response queue was specified
     // otherwise exit with OK status for an async request
-    if let Ok(response_queue_url) = var("LAMBDA_PROXY_RESP_QUEUE_URL") {
+    if let Ok(response_queue_url) = var("PROXY_LAMBDA_RESP_QUEUE_URL") {
         debug!("RespQ URL {}", response_queue_url);
         // clear the response queue to avoid getting a stale message from a previously timed out request
         // this call limits the invocations to no more than 1 per minute because AWS does not allow purging queues more often
