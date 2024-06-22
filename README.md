@@ -24,8 +24,7 @@ __Debugging configuration__
 
 __Initial setup:__
 
-- clone this repository locally
-- build for release or debug
+- clone and build this repository locally
 - create _request_ and _response_ queues in SQS with IAM permissions
 
 __Per Lambda function:__
@@ -46,17 +45,17 @@ This emulator provides the necessary API endpoints for the lambda function to ru
 * report errors back to AWS
 * handle concurrent requests
 * copies the entire set of env vars from AWS (see [runtime-emulator/env-template.sh](runtime-emulator/env-template.sh))
-* no support for X-Trace or Extensions APIs
+* support X-Trace or Extensions APIs
 
-If the local lambda sends back the response before other services time out (e.g. API GW times out after 30s)
-the _proxy_lambda_ returns it to the caller.
 
-## Deployment in details
+## Deployment in detail
 
 ### SQS configuration
 
-Create `proxy_lambda_req` and `proxy_lambda_resp` SQS queues.
-You may use different names, but it is easier to use the defaults provided here.
+- Create `proxy_lambda_req` SQS queue for requests to be sent from AWS to your local lambda under debugging. Required.
+- Create `proxy_lambda_resp` SQS queue if you want responses from your local lambda to be returned to the caller. Optional.
+
+You may use different queue names, but they would have to be specified in the env vars as described below.
 
 Recommended settings:
 
@@ -67,7 +66,7 @@ Recommended settings:
 - **Receive message wait time**: 20 Seconds
 
 This IAM policy grants _proxy-lambda_ access to the queues.
-It assumes that you have sufficient privileges to access Lambda and SQS from your local machine.
+It assumes that you already have sufficient privileges to access Lambda and SQS from your local machine.
 
 Replace _Principal_ and _Resource_ IDs with your values before adding this policy to the queue config.
 
@@ -91,6 +90,8 @@ Replace _Principal_ and _Resource_ IDs with your values before adding this polic
   ]
 }
 ```
+- _Principal_ - is the IAM role your lambda assumes (check Lambda's Permissions Config tab in the AWS console to find the value)
+- _Resource_ - the ARN of the queue the policy is attached to (see the queue details page in the AWS console to find the value)
 
 
 ### Building and deploying _proxy-lambda_
@@ -112,26 +113,23 @@ cp ./target/$target/release/proxy-lambda ./bootstrap && zip proxy.zip bootstrap 
 aws lambda update-function-code --region $region --function-name $name --zip-file fileb://proxy.zip
 ```
 
-A deployed _proxy-lambda_ should return _Config error_ if you run it with the test event from the console.
-
+A deployed _proxy-lambda_ should return _OK_ or to time out if you run it with the test event from the console.
 
 
 ### Lambda environmental variables
 
-- `PROXY_LAMBDA_TRACING_LEVEL` - optional, default=INFO, use DEBUG to get full lambda logging or TRACE to go deeper into dependencies.
-- `AWS_DEFAULT_REGION` or `AWS_REGION` - required, but they should be pre-set by AWS
-- `LAMBDA_PROXY_REQ_QUEUE_URL` - the Queue URL for Lambda proxy requests, required
-- `LAMBDA_PROXY_RESP_QUEUE_URL` - the Queue URL for Lambda handler responses, optional.
+These env vars are optional and can be omitted if you use the default queue names (`proxy_lambda_req`, `proxy_lambda_resp`) in the same region as the lambda.
 
-The proxy runs asynchronously if no `LAMBDA_PROXY_RESP_QUEUE_URL` is specified. It sends the request to `LAMBDA_PROXY_REQ_QUEUE_URL` and returns `OK` regardless of what happens at the remote handler's end.
-This is useful for debugging asynchronous functions like S3 event handlers. 
+- `RUST_LOG` - logging level, defaults to `INFO`, set it to `proxy=debug` to see more detailed info
+- `PROXY_LAMBDA_REQ_QUEUE_URL` - the Queue URL for Lambda proxy _requests_ if the queue name is different from the default
+- `PROXY_LAMBDA_RESP_QUEUE_URL` - the Queue URL for Lambda handler _responses_ if the queue name is different from the default
 
 ## Debugging
 
 Pre-requisites:
-- _proxy-lambda_ was deployed and configured
+- _proxy-lambda_ was deployed to AWS
 - SQS queues were created with the appropriate access policies
-- modify [runtime-emulator/env-minimal.sh](runtime-emulator/env-minimal.sh) with your IDs
+- [runtime-emulator/env-minimal.sh](runtime-emulator/env-minimal.sh) script contains your IDs
 
 __Launching the emulator:__
 - run the modified [runtime-emulator/env-minimal.sh](runtime-emulator/env-minimal.sh) in a terminal window on your local machine
@@ -159,6 +157,12 @@ If the local lambda fails, terminates or panics, you can make changes to the cod
 If you are not familiar with [AWS SQS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html) you may not know that the messages [have to be explicitly deleted](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteMessage.html) from the queue. The request messages are deleted by the handler wrapper when the handler returns a response. This allows re-running the handler if it fails before sending a response, which is a handy debugging feature. The response messages are deleted by the handler proxy as soon as they arrive.
 
 It is possible for the response to arrive too late because either the Lambda Runtime or the caller timed out. For example, AWS APIGateway wait is limited to 30s. The Lambda function can be configured to wait for up to 15 minutes. Remember to check that all stale messages got deleted and purge the queues via the console or AWS CLI if needed. 
+
+
+
+
+The proxy runs asynchronously if no `PROXY_LAMBDA_RESP_QUEUE_URL` is specified. It sends the request to the request queue and returns `OK` regardless of what happens at the remote handler's end.
+This is useful for debugging asynchronous functions like S3 event handlers. 
 
 ### Large payloads and data compression
 
