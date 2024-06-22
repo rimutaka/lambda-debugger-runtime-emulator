@@ -3,8 +3,9 @@
 
 # These queues is how the emulator communicates with the proxy lambda on AWS
 # Replace with your own queue URLs
-export LAMBDA_PROXY_REQ_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/512295225992/LAMBDA_PROXY_REQ 
-export LAMBDA_PROXY_RESP_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/512295225992/LAMBDA_PROXY_RESP
+export PROXY_LAMBDA_REQ_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/512295225992/proxy_lambda_req,
+# The response queue can be omitted if you don't need to forward responses to the caller
+export PROXY_LAMBDA_RESP_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/512295225992/proxy_lambda_resp
 
 # These vars are needed by the lambda function you are testing
 # Replace with your values, if needed

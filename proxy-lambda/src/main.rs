@@ -33,6 +33,9 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     debug!("Event: {:?}", event);
     debug!("Context: {:?}", ctx);
 
+    // to be used a few times later
+    let invoked_function_arn = ctx.invoked_function_arn.clone();
+
     // check if the request queue URL was specified via an env var
     // if not, use the default queue URL
     let request_queue_url = match var("PROXY_LAMBDA_REQ_QUEUE_URL") {
@@ -40,7 +43,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         Err(_e) => {
             // the env var does not exist - try to use the default queue URL
             // there shouldn't be any other env var errors, so the error type can be ignored
-            let arn = ctx.invoked_function_arn.split(':').collect::<Vec<&str>>();
+            let arn = invoked_function_arn.split(':').collect::<Vec<&str>>();
             // arn example: arn:aws:lambda:us-east-1:512295225992:function:my-lambda
             if arn.len() != 7 {
                 error!(
@@ -52,10 +55,10 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             }
 
             debug!(
-                "Reading from default proxy_lambda_req queue name. Use PROXY_LAMBDA_REQ_QUEUE_URL env var to specify a different queue. URL."
+                "Sending to default proxy_lambda_req queue name. Use PROXY_LAMBDA_REQ_QUEUE_URL env var to specify a different queue."
             );
 
-            // https://sqs.us-east-1.amazonaws.com/512295225992/PROXY_LAMBDA_REQ
+            // example: https://sqs.us-east-1.amazonaws.com/512295225992/proxy_lambda_req
             format!("https://sqs.{}.amazonaws.com/{}/proxy_lambda_req", arn[3], arn[4])
         }
     };
@@ -94,98 +97,129 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let msg_id = send_result.message_id.unwrap_or_default();
     debug!("Sent with ID: {}", msg_id);
 
-    // start listening to the response if the response queue was specified
-    // otherwise exit with OK status for an async request
-    if let Ok(response_queue_url) = var("PROXY_LAMBDA_RESP_QUEUE_URL") {
-        debug!("RespQ URL {}", response_queue_url);
-        // clear the response queue to avoid getting a stale message from a previously timed out request
-        // this call limits the invocations to no more than 1 per minute because AWS does not allow purging queues more often
-        purge_response_queue(&client, &response_queue_url).await?;
-        // now start listening
-        loop {
-            debug!("20s loop");
-            let resp = match client
-                .receive_message()
-                .max_number_of_messages(1)
-                .set_queue_url(Some(response_queue_url.to_string()))
-                .set_wait_time_seconds(Some(20))
-                .send()
-                .await
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    debug!("Error receiving messages: {:?}", e);
-                    return Err(Error::from("Failed to receive messages"));
-                }
-            };
-
-            // wait until a message arrives or the function is killed by AWS
-            // an empty list returns when the queue wait time expires
-            let mut msgs = match resp.messages {
-                Some(v) => v,
-                None => {
-                    debug!("No messages yet: message list is None");
-                    continue;
-                }
-            };
-            if msgs.is_empty() {
-                debug!("No messages yet: empty message list");
-                continue;
-            } else {
-                debug!("Received {} messages", msgs.len());
-            }
-
-            // message arrived - grab its handle for future reference
-            let receipt_handle = match msgs[0].receipt_handle.as_ref() {
-                Some(v) => v,
-                None => {
-                    return Err(Error::from("Failed to get msg receipt"));
-                }
-            }
-            .to_owned();
-
-            let body = match match msgs.pop() {
-                Some(v) => v,
-                None => {
-                    return Err(Error::from(
-                        "msgs Vec should have been pre-checked for is_empty(). It's a bug.",
-                    ));
-                }
-            }
-            .body
-            {
-                Some(v) => v,
-                None => {
-                    return Err(Error::from("Failed to get message body"));
-                }
-            };
-
-            debug!("Response:{}", body);
-
-            let body = decode_maybe_binary(body)?;
-
-            // delete it from the queue so it's not picked up again
-            match client
-                .delete_message()
-                .set_queue_url(Some(response_queue_url.to_string()))
-                .set_receipt_handle(Some(receipt_handle))
-                .send()
-                .await
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    debug!("Error deleting messages: {:?}", e);
-                    return Err(Error::from("Error deleting messages"));
-                }
-            };
-            debug!("Message deleted");
-
-            // return the contents of the message as JSON Value
-            return Ok(Value::from_str(&body)?);
+    // This proxy should wait for a response from the local lambda if there is a response queue.
+    // To determine if there is a response queue the proxy checks for the env var and tries to purge it.
+    // If no env var is set, the proxy tries to purge the default queue.
+    // Exit with OK if the env var does not exist and the default queue does not exist or gives this lambda no access
+    let response_queue_url = match var("PROXY_LAMBDA_RESP_QUEUE_URL") {
+        Ok(response_queue_url) => {
+            debug!("RespQ URL from env var: {}", response_queue_url);
+            // clear the response queue to avoid getting a stale message from a previously timed out request
+            purge_response_queue(&client, &response_queue_url).await?;
+            response_queue_url
         }
-    } else {
-        debug!("Async invocation. Not waiting for a response from the remote handler.");
-        Ok(Value::Null)
+        Err(_) => {
+            // queue env var does not exist - try to construct the default queue URL out of the lambda ARN
+            let arn = invoked_function_arn.split(':').collect::<Vec<&str>>();
+            // arn example: arn:aws:lambda:us-east-1:512295225992:function:my-lambda
+
+            if arn.len() != 7 {
+                error!(
+                    "ARN should have 7 parts, but it has {}: {}",
+                    arn.len(),
+                    invoked_function_arn
+                );
+                return Err(Error::from("Context error"));
+            }
+
+            // sample SQS URL https://sqs.us-east-1.amazonaws.com/512295225992/proxy_lambda_resp
+            let response_queue_url = format!("https://sqs.{}.amazonaws.com/{}/proxy_lambda_resp", arn[3], arn[4]);
+
+            debug!("RespQ URL from default: {}", response_queue_url);
+            debug!("Use PROXY_LAMBDA_RESP_QUEUE_URL env var to specify a different queue");
+
+            // if this call fails it may mean the queue does not exist or is misconfigured
+            // take this as the signal to not wait for a response
+            if let Err(_e) = purge_response_queue(&client, &response_queue_url).await {
+                debug!("Configure PROXY_LAMBDA_RESP_QUEUE_URL env var the default queue to wait for responses.");
+                return Ok(Value::Null);
+            };
+
+            response_queue_url
+        }
+    };
+
+    // wait the response until one arrives or the lambda times out
+    loop {
+        debug!("20s loop");
+        let resp = match client
+            .receive_message()
+            .max_number_of_messages(1)
+            .set_queue_url(Some(response_queue_url.to_string()))
+            .set_wait_time_seconds(Some(20))
+            .send()
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                debug!("Error receiving messages: {:?}", e);
+                return Err(Error::from("Failed to receive messages"));
+            }
+        };
+
+        // wait until a message arrives or the function is killed by AWS
+        // an empty list returns when the queue wait time expires
+        let mut msgs = match resp.messages {
+            Some(v) => v,
+            None => {
+                debug!("No messages yet: message list is None");
+                continue;
+            }
+        };
+        if msgs.is_empty() {
+            debug!("No messages yet: empty message list");
+            continue;
+        } else {
+            debug!("Received {} messages", msgs.len());
+        }
+
+        // message arrived - grab its handle for future reference
+        let receipt_handle = match msgs[0].receipt_handle.as_ref() {
+            Some(v) => v,
+            None => {
+                return Err(Error::from("Failed to get msg receipt"));
+            }
+        }
+        .to_owned();
+
+        let body = match match msgs.pop() {
+            Some(v) => v,
+            None => {
+                return Err(Error::from(
+                    "msgs Vec should have been pre-checked for is_empty(). It's a bug.",
+                ));
+            }
+        }
+        .body
+        {
+            Some(v) => v,
+            None => {
+                return Err(Error::from("Failed to get message body"));
+            }
+        };
+
+        debug!("Response:{}", body);
+
+        let body = decode_maybe_binary(body)?;
+
+        // delete it from the queue so it's not picked up again
+        match client
+            .delete_message()
+            .set_queue_url(Some(response_queue_url.to_string()))
+            .set_receipt_handle(Some(receipt_handle))
+            .send()
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                debug!("Error deleting messages: {:?}", e);
+                return Err(Error::from("Error deleting messages"));
+            }
+        };
+        debug!("Message deleted");
+
+        // return the contents of the message as JSON Value
+        return Ok(Value::from_str(&body)?);
     }
 }
 
