@@ -1,5 +1,4 @@
-/// This is a basic lambda for testing the emulator locally. 
-
+/// This is a basic lambda for testing the emulator locally.
 use lambda_runtime::{service_fn, tracing, Error, LambdaEvent};
 use serde::{Deserialize, Serialize};
 use tracing::info;

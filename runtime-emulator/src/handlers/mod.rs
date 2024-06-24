@@ -2,8 +2,8 @@ use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::body::Bytes;
 
 pub(crate) mod lambda_error;
-pub(crate) mod next_invocation;
 pub(crate) mod lambda_response;
+pub(crate) mod next_invocation;
 
 /// Returns an empty response body.
 pub(crate) fn empty() -> BoxBody<Bytes, hyper::Error> {

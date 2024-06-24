@@ -44,10 +44,9 @@ async fn lambda_api_handler(
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     init_tracing(None); // use the hardcoded default for now
 
-    let config = config::Config::from_env();
+    let config = config::Config::from_env().await;
 
     // bind to a TCP port and start a loop to continuously accept incoming connections
-    info!("Listening on http://{}", config.lambda_api_listener);
     let listener = TcpListener::bind(config.lambda_api_listener).await?;
 
     loop {

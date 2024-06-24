@@ -52,12 +52,12 @@ This emulator provides the necessary API endpoints for the lambda function to ru
 
 ### SQS configuration
 
-- Create `proxy_lambda_req` SQS queue for requests to be sent from AWS to your local lambda under debugging. Required.
-- Create `proxy_lambda_resp` SQS queue if you want responses from your local lambda to be returned to the caller. Optional.
+- Create `proxy_lambda_req` SQS queue for requests to be sent from AWS to your local lambda under debugging. _Required_.
+- Create `proxy_lambda_resp` SQS queue if you want responses from your local lambda to be returned to the caller. _Optional_.
 
-You may use different queue names, but they would have to be specified in the env vars as described below.
+See _Advanced setup_ section for more info on how to customize queue names and other settings.
 
-Recommended settings:
+Recommended queue settings:
 
 - **Queue type**: Standard
 - **Maximum message size**: 256 KB
@@ -113,7 +113,7 @@ cp ./target/$target/release/proxy-lambda ./bootstrap && zip proxy.zip bootstrap 
 aws lambda update-function-code --region $region --function-name $name --zip-file fileb://proxy.zip
 ```
 
-A deployed _proxy-lambda_ should return _OK_ or to time out if you run it with the test event from the console.
+A deployed _proxy-lambda_ should return _OK_ or time out if you run it with the test event from the console.
 
 
 ### Lambda environmental variables
@@ -126,31 +126,32 @@ These env vars are optional and can be omitted if you use the default queue name
 
 ## Debugging
 
-Pre-requisites:
+__Pre-requisites:__
 - _proxy-lambda_ was deployed to AWS
 - SQS queues were created with the appropriate access policies
-- [runtime-emulator/env-minimal.sh](runtime-emulator/env-minimal.sh) script contains your IDs
 
 __Launching the emulator:__
-- run the modified [runtime-emulator/env-minimal.sh](runtime-emulator/env-minimal.sh) in a terminal window on your local machine
-- start the _runtime-emulator_ in the same terminal window as a binary or with `cargo run`
+- start the _runtime-emulator_ in the terminal as a binary or with `cargo run`
 - the app should inform you it is listening on a certain port
 
 __Launching the local lambda:__
-- run the modified [runtime-emulator/env-minimal.sh](runtime-emulator/env-minimal.sh) in a terminal window on your local machine
+- run [runtime-emulator/env-lambda.sh](runtime-emulator/env-minlambdaimal.sh) in a terminal window on your local machine
 - start your lambda in the same terminal window with `cargo run`
 - the emulator will inform you it is waiting for an incoming message from the SQS
 
 __Debugging:__
 - trigger the event on AWS as part of your normal data flow, e.g. by a user action on a webpage
 - the emulator should display the lambda payload and forward it to your local lambda for processing
-- debug
+- debug as needed
 - successful responses are sent back to the caller if the response queue is configured 
+
+The same SQS message is reused until the lambda completes successfully.
+
 
 If the local lambda fails, terminates or panics, you can make changes to the code and run it again to reuse the same payload.
 
 
-## Technical details
+## Advanced setup
 
 ### SQS
 
@@ -159,10 +160,8 @@ If you are not familiar with [AWS SQS](https://docs.aws.amazon.com/AWSSimpleQueu
 It is possible for the response to arrive too late because either the Lambda Runtime or the caller timed out. For example, AWS APIGateway wait is limited to 30s. The Lambda function can be configured to wait for up to 15 minutes. Remember to check that all stale messages got deleted and purge the queues via the console or AWS CLI if needed. 
 
 
-
-
 The proxy runs asynchronously if no `PROXY_LAMBDA_RESP_QUEUE_URL` is specified. It sends the request to the request queue and returns `OK` regardless of what happens at the remote handler's end.
-This is useful for debugging asynchronous functions like S3 event handlers. 
+This is useful for debugging asynchronous functions like S3 event handlers.
 
 ### Large payloads and data compression
 

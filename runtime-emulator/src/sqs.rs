@@ -4,7 +4,7 @@ use flate2::read::GzEncoder;
 use flate2::Compression;
 use lambda_runtime::Context as Ctx;
 use runtime_emulator_types::RequestPayload;
-use std::cell::OnceCell;
+// use std::cell::OnceCell;
 use std::io::prelude::*;
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
@@ -22,9 +22,7 @@ pub(crate) struct SqsMessage {
 
 /// Reads a message from the specified SQS queue and returns the payload as Lambda structures
 pub(crate) async fn get_input() -> SqsMessage {
-    let cell = OnceCell::new();
-    let config = cell.get_or_init(config::Config::from_env);
-
+    let config = config::Config::from_env().await;
     let client = SqsClient::new(&aws_config::load_from_env().await);
 
     // start listening to the response
@@ -114,12 +112,54 @@ pub(crate) async fn get_input() -> SqsMessage {
     }
 }
 
+/// Returns URLs of the default request and response queues, if they exist.
+pub(crate) async fn get_default_queues() -> (Option<String>, Option<String>) {
+    let client = SqsClient::new(&aws_config::load_from_env().await);
+
+    // example of the default request queue URL
+    // https://sqs.us-east-1.amazonaws.com/512295225992/proxy_lambda_req
+
+    // get the list of queues that start with the default queue prefix
+    let resp = match client
+        .list_queues()
+        .set_queue_name_prefix(Some("proxy_lambda_re".to_string()))
+        .set_max_results(Some(100))
+        .send()
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            panic!("Failed to get list of SQS queues: {}", e);
+        }
+    };
+
+    // output containers
+    let mut req_queue = None;
+    let mut resp_queue = None;
+
+    // match queue names against the default names
+    if let Some(queue_urls) = resp.queue_urls {
+        for url in queue_urls {
+            if url.ends_with("/proxy_lambda_req") {
+                req_queue = Some(url);
+            } else if url.ends_with("/proxy_lambda_resp") {
+                resp_queue = Some(url);
+            }
+        }
+    }
+
+    (req_queue, resp_queue)
+}
+
 /// Send back the response and delete the message from the queue.
 pub(crate) async fn send_output(response: String, receipt_handle: String) {
-    let cell = OnceCell::new();
-    let config = cell.get_or_init(config::Config::from_env);
-
+    let config = config::Config::from_env().await;
     let client = SqsClient::new(&aws_config::load_from_env().await);
+
+    let response_queue_url = match config.response_queue_url {
+        Some(v) => v,
+        None => return,
+    };
 
     let response = compress_output(response);
 
@@ -128,7 +168,7 @@ pub(crate) async fn send_output(response: String, receipt_handle: String) {
         if let Err(e) = client
             .send_message()
             .set_message_body(Some(response))
-            .set_queue_url(Some(config.response_queue_url.to_string()))
+            .set_queue_url(Some(response_queue_url))
             .send()
             .await
         {
