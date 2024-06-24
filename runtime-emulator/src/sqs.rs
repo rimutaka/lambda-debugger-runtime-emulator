@@ -32,6 +32,10 @@ pub(crate) async fn get_input() -> SqsMessage {
     let config = CONFIG.get().await;
     let client = SQS_CLIENT.get().await;
 
+    // time to wait for the next message in seconds
+    // set to 0 to begin with a friendly message logic
+    let mut wait_time = 0;
+
     // start listening to the response
     loop {
         // try to get the next message and wait for it to arrive if none is ready
@@ -40,7 +44,7 @@ pub(crate) async fn get_input() -> SqsMessage {
             .receive_message()
             .max_number_of_messages(1)
             .set_queue_url(Some(config.request_queue_url.clone()))
-            .set_wait_time_seconds(Some(20))
+            .set_wait_time_seconds(Some(wait_time))
             .send()
             .await
         {
@@ -54,6 +58,12 @@ pub(crate) async fn get_input() -> SqsMessage {
 
         // wait until a message arrives or the function is killed by AWS
         if resp.messages.is_none() {
+            // print a friendly reminder to send an event
+            if wait_time == 0 {
+                info!("No messages in the queue. Start your AWS data flow to trigger the lambda");
+                wait_time = 20;
+            }
+
             continue;
         }
 

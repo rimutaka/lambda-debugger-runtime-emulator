@@ -1,3 +1,5 @@
+use std::env;
+
 use async_once::AsyncOnce;
 use config::Config;
 use http_body_util::combinators::BoxBody;
@@ -7,10 +9,9 @@ use hyper::service::service_fn;
 use hyper::{Method, Request, Response};
 use hyper_util::rt::TokioIo;
 use lazy_static::lazy_static;
-use std::env::var;
-use std::str::FromStr;
 use tokio::net::TcpListener;
 use tracing::{debug, error, warn};
+use tracing_subscriber::EnvFilter;
 
 mod config;
 mod handlers;
@@ -52,8 +53,7 @@ async fn lambda_api_handler(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    init_tracing(None); // use the hardcoded default for now
-
+    init_tracing();
     let config = CONFIG.get().await;
 
     // bind to a TCP port and start a loop to continuously accept incoming connections
@@ -77,23 +77,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-/// A standard routine for initializing a tracing provider for use in `main` and inside test functions.
-/// * tracing_level: pass None if not known in advance and should be taken from an env var
-fn init_tracing(tracing_level: Option<tracing::Level>) {
-    // get the log level from an env var
-    let tracing_level = match tracing_level {
-        Some(v) => v,
-        None => match var("LAMBDA_PROXY_TRACING_LEVEL") {
-            Err(_) => tracing::Level::INFO,
-            Ok(v) => tracing::Level::from_str(&v).expect("Invalid tracing level. Use trace, debug, error or info"),
-        },
+/// Initializes the tracing from RUST_LOG env var if present or sets minimal logging:
+/// - INFO for the emulator
+/// - ERROR for everything else
+fn init_tracing() {
+    // set the filter depending on the presense of the RUST_LOG env var
+    let filter = match env::var("RUST_LOG") {
+        Ok(v) if !v.is_empty() => EnvFilter::builder().from_env_lossy(),
+        _ => EnvFilter::builder()
+            .parse("error,runtime_emulator=info")
+            .expect("Invalid logging filter. It's a bug."),
     };
 
-    // init the logger with the specified level
+    // init the logger with the minimal format for compact output
     tracing_subscriber::fmt()
-        .with_max_level(tracing_level)
+        .with_env_filter(filter)
         .with_ansi(true)
-        // .without_time()
+        .with_target(false)
         .compact()
         .init();
 }
