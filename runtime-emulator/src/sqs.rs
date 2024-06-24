@@ -1,13 +1,20 @@
-use crate::config;
+use crate::CONFIG;
+use async_once::AsyncOnce;
 use aws_sdk_sqs::{types::Message, Client as SqsClient};
 use flate2::read::GzEncoder;
 use flate2::Compression;
 use lambda_runtime::Context as Ctx;
+use lazy_static::lazy_static;
 use runtime_emulator_types::RequestPayload;
-// use std::cell::OnceCell;
 use std::io::prelude::*;
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
+
+// Cannot use OnceCell because it does not support async initialization
+lazy_static! {
+    pub(crate) static ref SQS_CLIENT: AsyncOnce<SqsClient> =
+        AsyncOnce::new(async { SqsClient::new(&aws_config::load_from_env().await) });
+}
 
 /// A parsed SQS message.
 /// The parsing is limited to extracting the data we need and passing the rest to the runtime.
@@ -22,8 +29,8 @@ pub(crate) struct SqsMessage {
 
 /// Reads a message from the specified SQS queue and returns the payload as Lambda structures
 pub(crate) async fn get_input() -> SqsMessage {
-    let config = config::Config::from_env().await;
-    let client = SqsClient::new(&aws_config::load_from_env().await);
+    let config = CONFIG.get().await;
+    let client = SQS_CLIENT.get().await;
 
     // start listening to the response
     loop {
@@ -98,9 +105,6 @@ pub(crate) async fn get_input() -> SqsMessage {
 
         let payload = serde_json::to_string(&payload.event).expect("event contents cannot be serialized");
 
-        // let pld = pld.event.as_str().expect("event is not &str");
-        info!("Value: {payload}");
-
         // if we reached this point, we have a parsed SQS message
         // with the payload and the receipt handle
         // and should return it to the caller
@@ -114,7 +118,7 @@ pub(crate) async fn get_input() -> SqsMessage {
 
 /// Returns URLs of the default request and response queues, if they exist.
 pub(crate) async fn get_default_queues() -> (Option<String>, Option<String>) {
-    let client = SqsClient::new(&aws_config::load_from_env().await);
+    let client = SQS_CLIENT.get().await;
 
     // example of the default request queue URL
     // https://sqs.us-east-1.amazonaws.com/512295225992/proxy_lambda_req
@@ -153,11 +157,11 @@ pub(crate) async fn get_default_queues() -> (Option<String>, Option<String>) {
 
 /// Send back the response and delete the message from the queue.
 pub(crate) async fn send_output(response: String, receipt_handle: String) {
-    let config = config::Config::from_env().await;
-    let client = SqsClient::new(&aws_config::load_from_env().await);
+    let config = CONFIG.get().await;
+    let client = SQS_CLIENT.get().await;
 
-    let response_queue_url = match config.response_queue_url {
-        Some(v) => v,
+    let response_queue_url = match &config.response_queue_url {
+        Some(v) => v.clone(),
         None => return,
     };
 
