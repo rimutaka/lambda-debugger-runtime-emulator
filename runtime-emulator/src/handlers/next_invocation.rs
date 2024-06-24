@@ -15,7 +15,7 @@ pub(crate) async fn handler() -> Response<BoxBody<Bytes, Error>> {
     // this call will block until a message is available
     let sqs_message = sqs::get_input().await;
 
-    info!("{}", sqs_message.payload);
+    info!("Lambda request:\n{}", sqs_message.payload);
 
     Response::builder()
         .status(hyper::StatusCode::OK)

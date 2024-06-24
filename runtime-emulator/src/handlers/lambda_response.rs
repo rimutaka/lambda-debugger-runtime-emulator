@@ -6,8 +6,11 @@ use hyper::Error;
 use hyper::Request;
 use hyper::Response;
 use regex::Regex;
-use std::cell::OnceCell;
+use std::sync::OnceLock;
 use tracing::info;
+
+/// Contains compiled regex for extracting the receipt handle from the URL.
+static RECEIPT_REGEX: OnceLock<Regex> = OnceLock::new();
 
 /// Handles an invocation response the local lambda when it successfully completed processing.
 /// We forward the response to the SQS queue where it is picked up by the remote proxy lambda
@@ -22,8 +25,8 @@ pub(crate) async fn handler(req: Request<hyper::body::Incoming>) -> Response<Box
     // We need to store the receipt handle somewhere and placing it into the request-id param seems like an easy way to do it
     // because the local lambda will return it with the response.
     // The receipt handle can be a long string with /, - and other non-alphanumeric characters.
-    let cell = OnceCell::new();
-    let regex = cell.get_or_init(|| {
+
+    let regex = RECEIPT_REGEX.get_or_init(|| {
         Regex::new(r"/runtime/invocation/(.+)/response").expect("Invalid response URL regex. It's a bug.")
     });
     let receipt_handle = regex
@@ -56,7 +59,7 @@ pub(crate) async fn handler(req: Request<hyper::body::Incoming>) -> Response<Box
         }
     };
 
-    info!("Lambda response: {sqs_payload}");
+    info!("Lambda response:\n{sqs_payload}");
 
     sqs::send_output(sqs_payload, receipt_handle).await;
 
