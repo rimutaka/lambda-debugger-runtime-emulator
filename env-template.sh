@@ -1,12 +1,12 @@
-# This file is a list of environmental variables exported from AWS Lambda.
-# Your list wil contain different values.
+# This file is a sample list of all environmental variables exported from AWS Lambda.
 #
-# 1. deploy the proxy lambda function to AWS
+# To generate your own list:
+# 1. deploy proxy-lambda function to AWS
 # 2. run a test event in the console
-# 3. copy your list of environmental variables from the log
+# 3. copy your list of environmental variables from the CloudWatch log
 #
 # This list contains more variables than what is returned by the AWS CLI when you deploy the function.
-# See env-minimal.sh for the subset of vars required to run the runtime emulator.
+# See env-lambda.sh for the subset of vars required to run the runtime emulator.
 
 export AWS_DEFAULT_REGION=us-east-1
 export AWS_LAMBDA_FUNCTION_MEMORY_SIZE=128
