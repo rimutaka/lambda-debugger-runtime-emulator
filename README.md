@@ -5,8 +5,6 @@ This runtime emulator allows debugging AWS Lambda functions written in Rust loca
 
 ## How it works
 
-This project has two crates:
-
 __Production configuration__
 
 Consider this typical Lambda use case:
@@ -39,7 +37,7 @@ Detailed instructions and code samples for the above steps are provided further 
 
 ### Limitations
 
-This emulator provides the necessary API endpoints for the lambda function to run. It does not:
+This emulator provides the necessary API endpoints for the lambda function to run. __It does not:__
 
 * constrain the environment, e.g. memory or execution time
 * report errors back to AWS
@@ -113,7 +111,7 @@ cp ./target/$target/release/proxy-lambda ./bootstrap && zip proxy.zip bootstrap 
 aws lambda update-function-code --region $region --function-name $name --zip-file fileb://proxy.zip
 ```
 
-A deployed _proxy-lambda_ should return _OK_ or time out if you run it with the test event from the console.
+A deployed _proxy-lambda_ should return _OK_ or time out waiting for a response if you run it with a test event from the console.
 
 
 ### Lambda environmental variables
@@ -137,7 +135,7 @@ __Launching the emulator:__
 __Launching the local lambda:__
 - run [runtime-emulator/env-lambda.sh](runtime-emulator/env-minlambdaimal.sh) in a terminal window on your local machine
 - start your lambda in the same terminal window with `cargo run`
-- the emulator will inform you it is waiting for an incoming message from the SQS
+- the emulator should inform you it is waiting for an incoming message from the SQS
 
 __Debugging:__
 - trigger the event on AWS as part of your normal data flow, e.g. by a user action on a webpage
@@ -148,7 +146,7 @@ __Debugging:__
 The same SQS message is reused until the lambda completes successfully.
 
 
-If the local lambda fails, terminates or panics, you can make changes to the code and run it again to reuse the same payload.
+If the local lambda fails, terminates or panics, you can make changes to its code and run it again to reuse the same payload.
 
 
 ## Advanced setup
@@ -179,5 +177,5 @@ If `RUST_LOG` is not present or is empty, both crates log at the _INFO_ level an
 See [https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#example-syntax] for more info.
 
 Examples of `RUST_LOG` values:
-- `error` - log errors only
+- `error` - log errors only from all crates and dependencies
 - `warn,runtime_emulator=info` - _INFO_ level for the _runtime-emulator_, _WARN_ level for everything else
