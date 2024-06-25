@@ -163,6 +163,11 @@ It is possible for the response to arrive too late because either the Lambda Run
 The proxy runs asynchronously if no `PROXY_LAMBDA_RESP_QUEUE_URL` is specified. It sends the request to the request queue and returns `OK` regardless of what happens at the remote handler's end.
 This is useful for debugging asynchronous functions like S3 event handlers.
 
+An easy way to let the _proxy-lambda_ exit without waiting for the response is to change the access policy on the response queue.
+E.g. change the resource name from the correct queue name `"Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_resp"` to `"Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_resp_BLOCKED"`.
+The _proxy-lambda_ will treat the access error as a hint to not wait for the response.
+Such "_access denied_" errors are logged under _DEBUG_ level only to keep the logs clean.
+
 ### Large payloads and data compression
 
 The proxy Lambda function running on AWS and the client running on the dev's machine send JSON payload to SQS. The size of the payload is [limited to 262,144 bytes by SQS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/quotas-messages.html). To get around this limitation the client may compress the JSON payload using [flate2 crate](https://crates.io/crates/flate2) and send it as an encoded Base58 string. The encoding/decoding happens automatically at both ends. Only large messages are compressed because it takes up to a few seconds in debug mode.

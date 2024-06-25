@@ -60,7 +60,7 @@ pub(crate) async fn get_input() -> SqsMessage {
         if resp.messages.is_none() {
             // print a friendly reminder to send an event
             if wait_time == 0 {
-                info!("No messages in the queue. Start your AWS data flow to trigger the lambda");
+                info!("Lambda connected. Waiting for an incoming event from AWS.");
                 wait_time = 20;
             }
 
@@ -172,7 +172,10 @@ pub(crate) async fn send_output(response: String, receipt_handle: String) {
 
     let response_queue_url = match &config.response_queue_url {
         Some(v) => v.clone(),
-        None => return,
+        None => {
+            info!("Response dropped: no response queue configured");
+            return;
+        }
     };
 
     let response = compress_output(response);
@@ -190,7 +193,7 @@ pub(crate) async fn send_output(response: String, receipt_handle: String) {
         };
     } else {
         info!(
-            "Message size is too big for SQS: {}B, max allowed: 262,144 bytes",
+            " Response dropped: message size {}B, max allowed by SQS is 262,144 bytes",
             response.len()
         );
     }
@@ -205,6 +208,8 @@ pub(crate) async fn send_output(response: String, receipt_handle: String) {
     {
         panic!("Failed to send SQS response: {}", e);
     };
+
+    info!("Response sent and request deleted from the queue");
 }
 
 /// Compresses and encodes the output as Base58 if the message is larger than what is
@@ -215,7 +220,7 @@ fn compress_output(response: String) -> String {
         return response;
     }
 
-    println!(
+    info!(
         "Message size: {}B, max allowed: 262144B. Compressing...",
         response.len()
     );

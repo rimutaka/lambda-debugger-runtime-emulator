@@ -65,7 +65,7 @@ impl Config {
         };
 
         info!(
-            "Listening on http://{}\n- request queue:  {}\n- response queue: {}\n",
+            "Listening on http://{}\n- request queue:  {}\n- response queue: {}\nStart the local lambda now.",
             lambda_api_listener,
             request_queue_url,
             response_queue_url.clone().unwrap_or_else(String::new),

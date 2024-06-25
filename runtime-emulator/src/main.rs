@@ -1,5 +1,3 @@
-use std::env;
-
 use async_once::AsyncOnce;
 use config::Config;
 use http_body_util::combinators::BoxBody;
@@ -9,8 +7,10 @@ use hyper::service::service_fn;
 use hyper::{Method, Request, Response};
 use hyper_util::rt::TokioIo;
 use lazy_static::lazy_static;
+use std::str::FromStr;
 use tokio::net::TcpListener;
 use tracing::{debug, error, warn};
+use tracing_subscriber::filter::Directive;
 use tracing_subscriber::EnvFilter;
 
 mod config;
@@ -81,17 +81,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 /// - INFO for the emulator
 /// - ERROR for everything else
 fn init_tracing() {
-    // set the filter depending on the presense of the RUST_LOG env var
-    let filter = match env::var("RUST_LOG") {
-        Ok(v) if !v.is_empty() => EnvFilter::builder().from_env_lossy(),
-        _ => EnvFilter::builder()
-            .parse("error,runtime_emulator=info")
-            .expect("Invalid logging filter. It's a bug."),
-    };
-
-    // init the logger with the minimal format for compact output
     tracing_subscriber::fmt()
-        .with_env_filter(filter)
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(
+                    Directive::from_str("runtime_emulator=info").expect("Invalid logging filter. It's a bug."),
+                )
+                .from_env_lossy(),
+        )
+        // .with_env_filter(filter)
         .with_ansi(true)
         .with_target(false)
         .compact()

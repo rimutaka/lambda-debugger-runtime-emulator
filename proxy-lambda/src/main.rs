@@ -7,11 +7,21 @@ use std::env::var;
 use std::io::Read;
 use std::str::FromStr;
 use tracing::{debug, error, info};
+use tracing_subscriber::{filter::Directive, EnvFilter};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    // initialize the tracing from RUST_LOG env var if present or sets minimal logging:
+    // - INFO for the proxy
+    // - ERROR for everything else
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(
+                    Directive::from_str("proxy_lambda=info").expect("Invalid logging filter. It's a bug."),
+                )
+                .from_env_lossy(),
+        )
         .with_ansi(false)
         .without_time()
         .compact()
@@ -20,7 +30,7 @@ async fn main() -> Result<(), Error> {
     print_env_vars();
 
     if let Err(e) = lambda_runtime::run(service_fn(my_handler)).await {
-        debug!("Runtime error: {:?}", e);
+        error!("Runtime error: {:?}", e);
         return Err(Error::from(e));
     }
 
@@ -30,8 +40,14 @@ async fn main() -> Result<(), Error> {
 async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let (event, ctx) = event.into_parts();
 
-    debug!("Event: {:?}", event);
-    debug!("Context: {:?}", ctx);
+    info!(
+        "Event:\r{}",
+        serde_json::to_string(&event).unwrap_or_else(|e| format!("Could not serialize event payload: {:?}", e))
+    );
+    info!(
+        "Context:\r{}",
+        serde_json::to_string(&ctx).unwrap_or_else(|e| format!("Could not serialize context: {:?}", e))
+    );
 
     // to be used a few times later
     let invoked_function_arn = ctx.invoked_function_arn.clone();
@@ -89,7 +105,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     {
         Ok(v) => v,
         Err(e) => {
-            debug!("Error sending message: {:?}", e);
+            error!("Error sending message: {:?}", e);
             return Err(Error::from("Failed to send message"));
         }
     };
@@ -131,7 +147,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             // if this call fails it may mean the queue does not exist or is misconfigured
             // take this as the signal to not wait for a response
             if let Err(_e) = purge_response_queue(&client, &response_queue_url).await {
-                debug!("Configure PROXY_LAMBDA_RESP_QUEUE_URL env var the default queue to wait for responses.");
+                info!("No response queue is configured");
                 return Ok(Value::Null);
             };
 
@@ -140,6 +156,10 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     };
 
     // wait the response until one arrives or the lambda times out
+    info!(
+        "Waiting for a response from the local lambda via {}",
+        response_queue_url
+    );
     loop {
         debug!("20s loop");
         let resp = match client
@@ -152,7 +172,7 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         {
             Ok(v) => v,
             Err(e) => {
-                debug!("Error receiving messages: {:?}", e);
+                error!("Error receiving messages: {:?}", e);
                 return Err(Error::from("Failed to receive messages"));
             }
         };
@@ -198,8 +218,6 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             }
         };
 
-        debug!("Response:{}", body);
-
         let body = decode_maybe_binary(body)?;
 
         // delete it from the queue so it's not picked up again
@@ -212,11 +230,12 @@ async fn my_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         {
             Ok(v) => v,
             Err(e) => {
-                debug!("Error deleting messages: {:?}", e);
+                error!("Error deleting messages: {:?}", e);
                 return Err(Error::from("Error deleting messages"));
             }
         };
         debug!("Message deleted");
+        info!("Response from the local lambda:\r{}", body);
 
         // return the contents of the message as JSON Value
         return Ok(Value::from_str(&body)?);
@@ -232,11 +251,13 @@ fn decode_maybe_binary(body: String) -> Result<String, Error> {
         return Ok(body);
     }
 
+    debug!("Response payload before decoding:\r{}", body);
+
     // try to decode base58
     let body_decoded = match bs58::decode(&body).into_vec() {
         Ok(v) => v,
         Err(e) => {
-            debug!("Failed to decode from maybe base58: {:?}", e);
+            error!("Failed to decode from maybe base58: {:?}", e);
             return Err(Error::from("Failed to decode from maybe base58"));
         }
     };
@@ -247,18 +268,18 @@ fn decode_maybe_binary(body: String) -> Result<String, Error> {
     let len = match decoder.read_to_end(&mut decoded) {
         Ok(v) => v,
         Err(e) => {
-            debug!("Failed to decompress the payload: {:?}", e);
+            error!("Failed to decompress the payload: {:?}", e);
             return Err(Error::from("Failed to decompress the payload"));
         }
     };
 
-    debug!("Decoded {} bytes", len);
+    info!("Decoded {} bytes of binary response", len);
 
     // return the bytes converted into a lossy unicode string or an error
     match String::from_utf8(decoded) {
         Ok(v) => Ok(v),
         Err(e) => {
-            debug!("Failed to convert decompressed payload to UTF8: {:?}", e);
+            error!("Failed to convert decompressed payload to UTF8: {:?}", e);
             Err(Error::from("Failed to convert decompressed payload to UTF8"))
         }
     }
@@ -277,7 +298,7 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
         {
             Ok(v) => v,
             Err(e) => {
-                debug!("Error receiving messages: {:?}", e);
+                debug!("Error receiving stale messages for deletion: {:?}", e);
                 return Err(Error::from("Error receiving messages"));
             }
         };
@@ -286,7 +307,7 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
         let msgs = match resp.messages {
             Some(v) => v,
             None => {
-                debug!("No stale messages in purge queue");
+                debug!("No stale messages in response queue");
                 return Ok(());
             }
         };
@@ -296,7 +317,7 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
             return Ok(());
         }
 
-        debug!("Deleting {} stale messages", msgs.len());
+        info!("Deleting {} stale messages", msgs.len());
 
         for msg in msgs {
             // delete it from the queue
@@ -309,7 +330,7 @@ async fn purge_response_queue(client: &SqsClient, response_queue_url: &str) -> R
             {
                 Ok(v) => v,
                 Err(e) => {
-                    debug!("Error deleting messages: {:?}", e);
+                    error!("Error deleting messages: {:?}", e);
                     return Err(Error::from("Error deleting messages"));
                 }
             };
@@ -336,5 +357,5 @@ fn print_env_vars() {
     // the list is easier to deal with when sorted
     env_vars.sort();
 
-    info!("{}", env_vars.join(" "));
+    info!("AWS env vars:\r{}", env_vars.join(" ").trim());
 }
