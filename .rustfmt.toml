@@ -1,5 +1,5 @@
-edition = "2018"
+edition = "2021"
 # https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#merge_imports
-merge_imports = true
+# imports_granularity = "Crate"
 # https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#max_width
 max_width = 120
