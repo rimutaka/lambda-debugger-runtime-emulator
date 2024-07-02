@@ -43,7 +43,7 @@ pub(crate) async fn get_input() -> SqsMessage {
         let resp = match client
             .receive_message()
             .max_number_of_messages(1)
-            .set_queue_url(Some(config.request_queue_url.clone()))
+            .set_queue_url(Some(config.remote_config().request_queue_url.clone()))
             .set_wait_time_seconds(Some(wait_time))
             .send()
             .await
@@ -170,7 +170,7 @@ pub(crate) async fn send_output(response: String, receipt_handle: String) {
     let config = CONFIG.get().await;
     let client = SQS_CLIENT.get().await;
 
-    let response_queue_url = match &config.response_queue_url {
+    let response_queue_url = match &config.remote_config().response_queue_url {
         Some(v) => v.clone(),
         None => {
             info!("Response dropped: no response queue configured");
@@ -201,7 +201,7 @@ pub(crate) async fn send_output(response: String, receipt_handle: String) {
     // delete the request msg from the queue so it cannot be replayed again
     if let Err(e) = client
         .delete_message()
-        .set_queue_url(Some(config.request_queue_url.to_string()))
+        .set_queue_url(Some(config.remote_config().request_queue_url.to_string()))
         .set_receipt_handle(Some(receipt_handle))
         .send()
         .await

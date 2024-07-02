@@ -29,8 +29,8 @@ pub(crate) async fn handler(req: Request<hyper::body::Incoming>) -> Response<Box
         }
     }
 
-    info!("Ctlr-C your lambda or this runtime within 10s to avoid a rerun");
-    sleep(Duration::from_secs(10)).await;
+    info!("Ctlr-C your lambda within 30s to avoid a rerun");
+    sleep(Duration::from_secs(30)).await;
 
     // lambda allows for more informative error responses, but this may be enough for now
     Response::builder()

@@ -5,6 +5,10 @@ pub(crate) mod lambda_error;
 pub(crate) mod lambda_response;
 pub(crate) mod next_invocation;
 
+/// A request ID substitute for local file payloads.
+/// No SQS responses are sent back to AWS for this request ID.
+pub(crate) const LOCAL_REQUEST_ID: &str = "local-request-id";
+
 /// Returns an empty response body.
 pub(crate) fn empty() -> BoxBody<Bytes, hyper::Error> {
     Empty::<Bytes>::new().map_err(|never| match never {}).boxed()

@@ -1,4 +1,4 @@
-use super::empty;
+use super::{empty, LOCAL_REQUEST_ID};
 use crate::sqs;
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::body::Bytes;
@@ -7,7 +7,8 @@ use hyper::Request;
 use hyper::Response;
 use regex::Regex;
 use std::sync::OnceLock;
-use tracing::info;
+use tokio::time::{sleep, Duration};
+use tracing::{info, warn};
 
 /// Contains compiled regex for extracting the receipt handle from the URL.
 static RECEIPT_REGEX: OnceLock<Regex> = OnceLock::new();
@@ -61,7 +62,14 @@ pub(crate) async fn handler(req: Request<hyper::body::Incoming>) -> Response<Box
 
     info!("Lambda response:\n{sqs_payload}");
 
-    sqs::send_output(sqs_payload, receipt_handle).await;
+    // only send responses back to SQS if the request came from SQS
+    if receipt_handle == LOCAL_REQUEST_ID {
+        info!("No SQS responses for local payload requests");
+        warn!("Ctlr-C your lambda or this runtime within 30s to avoid a rerun");
+        sleep(Duration::from_secs(30)).await;
+    } else {
+        sqs::send_output(sqs_payload, receipt_handle).await;
+    }
 
     Response::builder()
         .status(hyper::StatusCode::OK)

@@ -1,49 +1,49 @@
-# Lambda Runtime Emulator for local debugging
+# Lambda Runtime Emulator for local and remote debugging
 
-This runtime emulator allows debugging AWS Lambda functions written in Rust locally while receiving the payload from AWS and sending the responses back as if you were doing remote debugging inside the AWS environment.
+This emulator allows running Lambda functions locally with either a local payload from a file or a remote payload from AWS as if the local lambda was running there.
 
+## Debugging with local payload
 
-## How it works
+Use this method for simple use cases where a single static payload is sufficient.
 
-__Production configuration__
+1. Save your payload into a file, e.g. save `{"command": "echo"}` into `test-payload.json`
+2. Start the emulator with the payload file name as its only param, e.g. `runtime-emulator test-payload.json`
+3. Run `runtime-emulator/env-emulator.sh` script to create required environmental variables
+4. Start your lambda with `cargo run`
 
-Consider this typical Lambda use case:
+The lambda will connect to the emulator and receive the payload.
+You can re-run your lambda with the same payload as many times as needed.
+
+## Debugging with remote payload
+
+Use this method to get dynamic payload from other AWS systems or when you need to send back a dynamic response, e.g. a request triggered by a user action on a website involving API Gateway as in the following diagram:
 
 ![function needed debugging](./img/lambda-debugger-usecase.png)
 
-__Debugging configuration__
+__Remote debugging configuration__
 
-This project contains two Rust crates for local Lambda debugging:
+This project provides the tools necessary to bring the payload to your local machine, run the lambda and send back the response as if the local lambda was running on AWS.
 
 - _proxy-lambda_ forwards Lambda requests and responses between AWS and your development machine in real time
-- _runtime-emulator_ provides Lambda APIs to run a Lambda function locally and exchange payloads with AWS
+- _runtime-emulator_ provides Lambda APIs to run a lambda function locally and exchange payloads with AWS
 
 ![function debugged locally](./img/lambda-debugger-components.png)
 
 ### Limitations
+
+This Lambda emulator does not provide the full runtime capabilities of AWS:
 
 * no environment constraints, e.g. memory or execution time
 * panics are not reported back to AWS
 * no concurrent request handling
 * no support for X-Trace or Extensions APIs
 
-## Getting started
+## Getting started with remote debugging
 
-### Overview
-
-__Initial setup:__
-
-- clone and build this repository locally
 - create _request_ and _response_ queues in SQS with IAM permissions
-
-__Per Lambda function:__
-
 - deploy _proxy-lambda_ in place of the function you need to debug
 - run the emulator locally as a binary or with `cargo run`
 - run your lambda locally with `cargo run`
-
-
-## Deployment in detail
 
 ### SQS configuration
 
@@ -117,7 +117,7 @@ aws lambda update-function-code --region $region --function-name $name --zip-fil
 
 A deployed _proxy-lambda_ should return _OK_ or time out waiting for a response if you run it with a test event from the AWS console. Check CloudWatch logs for a detailed execution report.
 
-## Debugging
+### Debugging
 
 __Pre-requisites:__
 - _proxy-lambda_ was deployed to AWS
@@ -150,7 +150,7 @@ __Success, failure and replay:__
 If the local lambda fails, terminates or panics, you can make changes to its code and run it again to reuse the same incoming payload from the request queue.
 
 
-## Advanced setup
+## Advanced remote debugging setup
 
 ### Custom SQS queue names
 
