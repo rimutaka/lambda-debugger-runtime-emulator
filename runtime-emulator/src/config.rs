@@ -5,6 +5,8 @@ use std::net::Ipv4Addr;
 use std::str::FromStr;
 use tracing::{info, warn};
 
+const REQUIRED_ENV_VARS: &str = "export AWS_LAMBDA_FUNCTION_VERSION=$LATEST && export AWS_LAMBDA_FUNCTION_MEMORY_SIZE=128 && export AWS_LAMBDA_FUNCTION_NAME=my-lambda && export AWS_LAMBDA_RUNTIME_API=127.0.0.1:9001";
+
 /// Payloads come from a local file, responses are not sent anywhere
 pub(crate) struct LocalConfig {
     /// Decoded payload from the local file. Can be anything as long as it's UTF-8
@@ -62,8 +64,8 @@ impl Config {
         let sources = match get_local_payload() {
             Some(local_config) => {
                 info!(
-                    "Listening on http://{}\n- payload from: {}",
-                    lambda_api_listener, local_config.file_name
+                    "Listening on http://{}\n- payload from: {}\n- required env vars: {}",
+                    lambda_api_listener, local_config.file_name, REQUIRED_ENV_VARS
                 );
 
                 PayloadSources::Local(local_config)
@@ -71,10 +73,11 @@ impl Config {
             None => match get_queues().await {
                 Some(remote_config) => {
                     info!(
-                        "Listening on http://{}\n- request queue:  {}\n- response queue: {}",
+                        "Listening on http://{}\n- request queue:  {}\n- response queue: {}\n- required env vars: {}",
                         lambda_api_listener,
                         remote_config.request_queue_url,
                         remote_config.response_queue_url.clone().unwrap_or_else(String::new),
+                        REQUIRED_ENV_VARS
                     );
 
                     PayloadSources::Remote(remote_config)
@@ -85,7 +88,7 @@ impl Config {
             },
         };
 
-        warn!("Start the local lambda now.");
+        warn!("Add required env vars and start the local lambda now.");
 
         Self {
             lambda_api_listener,
@@ -149,12 +152,10 @@ fn get_local_payload() -> Option<LocalConfig> {
     if let Some(payload_file) = std::env::args().nth(1) {
         // read the payload from the file
         match std::fs::read_to_string(payload_file.clone()) {
-            Ok(payload) => {
-                Some(LocalConfig {
-                    payload,
-                    file_name: payload_file,
-                })
-            }
+            Ok(payload) => Some(LocalConfig {
+                payload,
+                file_name: payload_file,
+            }),
 
             // there is no point proceeding if the payload cannot be read
             Err(e) => {
