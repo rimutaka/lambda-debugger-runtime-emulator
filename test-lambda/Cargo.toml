@@ -1,5 +1,5 @@
 [package]
-name = "local-lambda"
+name = "test-lambda"
 version = "0.2.0"
 authors = ["rimutaka <max@onebro.me>"]
 edition = "2021"

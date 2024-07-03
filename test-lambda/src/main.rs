@@ -1,5 +1,5 @@
 /// This is a basic lambda for testing the emulator locally.
-use lambda_runtime::{service_fn, tracing, Error, LambdaEvent};
+use lambda_runtime::{service_fn, Error, LambdaEvent};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -16,8 +16,13 @@ struct Response {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    // required to enable CloudWatch error logging by the runtime
-    tracing::init_default_subscriber();
+    // minimal logging to keep it simple
+    tracing_subscriber::fmt()
+        .compact()
+        .without_time()
+        .with_ansi(true)
+        .with_target(false)
+        .init();
 
     let func = service_fn(my_handler);
     lambda_runtime::run(func).await?;

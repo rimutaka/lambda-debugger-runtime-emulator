@@ -2,7 +2,7 @@
 members = [
     "proxy-lambda",
     "runtime-emulator",
-    "local-lambda",
+    "test-lambda",
 ]
 resolver = "2"
 
