@@ -9,7 +9,7 @@ use hyper_util::rt::TokioIo;
 use lazy_static::lazy_static;
 use std::str::FromStr;
 use tokio::net::TcpListener;
-use tracing::{debug, error, warn};
+use tracing::{debug, info, warn};
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::EnvFilter;
 
@@ -71,7 +71,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .serve_connection(io, service_fn(lambda_api_handler))
                 .await
             {
-                error!("Error serving TCP connection: {:?}", err);
+                debug!("TCP error: {:?}", err);
+                info!("Lambda disconnected\n")
             }
         });
     }

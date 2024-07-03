@@ -1,4 +1,4 @@
-use super::{full, LOCAL_REQUEST_ID};
+use super::{full, BLOCK_NEXT_INVOCATION, LOCAL_REQUEST_ID};
 use crate::config::PayloadSources;
 use crate::sqs;
 use crate::CONFIG;
@@ -6,7 +6,8 @@ use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
 use hyper::Error;
 use hyper::Response;
-use tracing::info;
+use tokio::time::{sleep, Duration};
+use tracing::{error, info, warn};
 
 /// Handles _next invocation_ request from the local lambda.
 /// It blocks on SQS and waits indefinitely for the next SQS message to arrive.
@@ -18,6 +19,13 @@ pub(crate) async fn handler() -> Response<BoxBody<Bytes, Error>> {
 
     // return local payload from the file if was provided
     if let PayloadSources::Local(local_config) = &config.sources {
+        // local payload should only be returned once to avoid an infinite loop
+        // the lambda should be restarted to rerun the same payload
+        // this call will block the response until the connection is reset
+        block_if_rerun().await;
+
+        info!("Lambda request: sending payload from file");
+
         return Response::builder()
             .status(hyper::StatusCode::OK)
             .header("lambda-runtime-aws-request-id", LOCAL_REQUEST_ID)
@@ -54,4 +62,31 @@ pub(crate) async fn handler() -> Response<BoxBody<Bytes, Error>> {
         )
         .body(full(sqs_message.payload))
         .expect("Failed to create a response")
+}
+
+/// Checks BLOCK_NEXT_INVOCATION global flag and 
+/// blocks the current thread if the current invocation should be blocked.
+async fn block_if_rerun() {
+    // create a local copy of the blocking flag
+    let block = if let Ok(block) = BLOCK_NEXT_INVOCATION.read() {
+        *block
+    } else {
+        error!("Read deadlock on BLOCK_NEXT_INVOCATION. It's a bug");
+        false
+    };
+
+    // unblock the next invocation
+    if block {
+        if let Ok(mut w) = BLOCK_NEXT_INVOCATION.write() {
+            *w = false;
+        } else {
+            error!("Write deadlock on BLOCK_NEXT_INVOCATION. It's a bug");
+        }
+    }
+
+    // sleep for a month to prevent a rerun with the same payload
+    if block {
+        warn!("Restart your lambda for a rerun with the same payload");
+        sleep(Duration::from_secs(31563000)).await;
+    }
 }

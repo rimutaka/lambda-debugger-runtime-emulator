@@ -1,10 +1,9 @@
-use super::empty;
+use super::{empty, BLOCK_NEXT_INVOCATION};
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::body::Bytes;
 use hyper::Error;
 use hyper::{Request, Response};
-use tokio::time::{sleep, Duration};
-use tracing::{info, warn};
+use tracing::{debug, error, info};
 
 pub(crate) async fn handler(req: Request<hyper::body::Incoming>) -> Response<BoxBody<Bytes, Error>> {
     // Initialization error (https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-initerror) and
@@ -21,7 +20,7 @@ pub(crate) async fn handler(req: Request<hyper::body::Incoming>) -> Response<Box
             info!("Lambda error: {v}");
         }
         Err(e) => {
-            warn!(
+            error!(
                 "Non-UTF-8 error response from Lambda. {:?}\n{}",
                 e,
                 hex::encode(resp.as_ref())
@@ -29,8 +28,13 @@ pub(crate) async fn handler(req: Request<hyper::body::Incoming>) -> Response<Box
         }
     }
 
-    info!("Ctlr-C your lambda within 30s to avoid a rerun");
-    sleep(Duration::from_secs(30)).await;
+    // block the next invocation to prevent an infinite loop of reruns
+    if let Ok(mut w) = BLOCK_NEXT_INVOCATION.write() {
+        debug!("Blocking the next invocation");
+        *w = true;
+    } else {
+        error!("Write deadlock on BLOCK_NEXT_INVOCATION. It's a bug");
+    }
 
     // lambda allows for more informative error responses, but this may be enough for now
     Response::builder()

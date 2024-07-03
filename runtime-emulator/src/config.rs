@@ -64,8 +64,8 @@ impl Config {
         let sources = match get_local_payload() {
             Some(local_config) => {
                 info!(
-                    "Listening on http://{}\n- payload from: {}\n- required env vars: {}",
-                    lambda_api_listener, local_config.file_name, REQUIRED_ENV_VARS
+                    "Listening on http://{}\n- payload from: {}\n",
+                    lambda_api_listener, local_config.file_name
                 );
 
                 PayloadSources::Local(local_config)
@@ -73,11 +73,10 @@ impl Config {
             None => match get_queues().await {
                 Some(remote_config) => {
                     info!(
-                        "Listening on http://{}\n- request queue:  {}\n- response queue: {}\n- required env vars: {}",
+                        "Listening on http://{}\n- request queue:  {}\n- response queue: {}\n",
                         lambda_api_listener,
                         remote_config.request_queue_url,
                         remote_config.response_queue_url.clone().unwrap_or_else(String::new),
-                        REQUIRED_ENV_VARS
                     );
 
                     PayloadSources::Remote(remote_config)
@@ -87,8 +86,7 @@ impl Config {
                 }
             },
         };
-
-        warn!("Add required env vars and start the local lambda now.");
+        warn!("Add required env vars and start the lambda:\n{}\n", REQUIRED_ENV_VARS);
 
         Self {
             lambda_api_listener,
