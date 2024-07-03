@@ -14,16 +14,14 @@ use tracing::{error, info, warn};
 /// The first message in the queue is passed back onto the local lambda.
 /// See https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-next
 pub(crate) async fn handler() -> Response<BoxBody<Bytes, Error>> {
+    // check if the current invocation is a re-run and should be blocked
+    block_if_rerun().await;
+
     // check if there is a payload file name in the command line arguments
     let config = CONFIG.get().await;
 
     // return local payload from the file if was provided
     if let PayloadSources::Local(local_config) = &config.sources {
-        // local payload should only be returned once to avoid an infinite loop
-        // the lambda should be restarted to rerun the same payload
-        // this call will block the response until the connection is reset
-        block_if_rerun().await;
-
         info!("Lambda request: sending payload from file");
 
         return Response::builder()
@@ -64,7 +62,7 @@ pub(crate) async fn handler() -> Response<BoxBody<Bytes, Error>> {
         .expect("Failed to create a response")
 }
 
-/// Checks BLOCK_NEXT_INVOCATION global flag and 
+/// Checks BLOCK_NEXT_INVOCATION global flag and
 /// blocks the current thread if the current invocation should be blocked.
 async fn block_if_rerun() {
     // create a local copy of the blocking flag

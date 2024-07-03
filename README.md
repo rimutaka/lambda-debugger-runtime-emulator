@@ -16,13 +16,13 @@ You can re-run your lambda with the same payload as many times as needed.
 
 ## Debugging with remote payload
 
-Use this method to get dynamic payload from other AWS systems or when you need to send back a dynamic response, e.g. a request triggered by a user action on a website involving API Gateway as in the following diagram:
+Use this method to get dynamic payload from other AWS services or when you need to send back a dynamic response, e.g. to process a request triggered by a user action on a website involving API Gateway as in the following diagram:
 
 ![function needed debugging](./img/lambda-debugger-usecase.png)
 
 __Remote debugging configuration__
 
-This project provides the tools necessary to bring the payload to your local machine, run the lambda and send back the response as if the local lambda was running on AWS.
+This project provides the tools necessary to bring the AWS payload to your local machine in real-time, run the lambda and send back the response as if the local lambda was running on AWS.
 
 - _proxy-lambda_ forwards Lambda requests and responses between AWS and your development machine in real time
 - _runtime-emulator_ provides Lambda APIs to run a lambda function locally and exchange payloads with AWS
