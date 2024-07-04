@@ -1,4 +1,4 @@
-# Lambda Runtime Emulator for local and remote debugging
+# AWS Lambda Runtime Emulator for Local and Remote Debugging
 
 This emulator allows running Lambda functions locally with either a local payload from a file or a remote payload from AWS as if the local lambda was running there.
 
