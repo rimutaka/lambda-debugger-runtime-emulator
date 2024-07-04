@@ -6,7 +6,7 @@ This emulator allows running Lambda functions locally with either a local payloa
 
 Use this method for simple use cases where a single static payload is sufficient.
 
-1. Save your payload into a file, e.g. save `{"command": "echo"}` into `test-payload.json`
+1. Save your payload into a file, e.g. save `{"command": "echo"}` into `test-payload.json` file
 2. Start the emulator with the payload file name as its only param, e.g. `runtime-emulator test-payload.json`
 3. Start your lambda with `cargo run`
 

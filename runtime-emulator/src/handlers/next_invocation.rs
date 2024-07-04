@@ -82,9 +82,9 @@ async fn block_if_rerun() {
         }
     }
 
-    // sleep for a month to prevent a rerun with the same payload
+    // sleep for a month to prevent a rerun
     if block {
-        warn!("Restart your lambda for a rerun with the same payload");
+        warn!("Restart your lambda for a rerun");
         sleep(Duration::from_secs(31563000)).await;
     }
 }
