@@ -8,8 +8,7 @@ Use this method for simple use cases where a single static payload is sufficient
 
 1. Save your payload into a file, e.g. save `{"command": "echo"}` into `test-payload.json`
 2. Start the emulator with the payload file name as its only param, e.g. `runtime-emulator test-payload.json`
-3. Run `runtime-emulator/env-emulator.sh` script to create required environmental variables
-4. Start your lambda with `cargo run`
+3. Start your lambda with `cargo run`
 
 The lambda will connect to the emulator and receive the payload.
 You can re-run your lambda with the same payload as many times as needed.
@@ -37,6 +36,8 @@ This Lambda emulator does not provide the full runtime capabilities of AWS:
 * panics are not reported back to AWS
 * no concurrent request handling
 * no support for X-Trace or Extensions APIs
+* no stream responses
+* smaller maximum payload size
 
 ## Getting started with remote debugging
 
@@ -65,8 +66,6 @@ Recommended queue settings:
 This IAM policy grants _proxy-lambda_ access to the queues.
 It assumes that you already have sufficient privileges to access Lambda and SQS from your local machine.
 
-Replace _Principal_ and _Resource_ IDs with your values before adding this policy to the queue config.
-
 ```json
 {
   "Version": "2012-10-17",
@@ -87,6 +86,10 @@ Replace _Principal_ and _Resource_ IDs with your values before adding this polic
   ]
 }
 ```
+#### Modifying the policy with your IDs
+
+You need to replace _Principal_ and _Resource_ IDs with your values before adding the above policy to your queues:
+
 - _Principal_ - is the IAM role your lambda assumes (check Lambda's Permissions Config tab in the AWS console to find the value)
 - _Resource_ - the ARN of the queue the policy is attached to (see the queue details page in the AWS console to find the value)
 
@@ -98,9 +101,9 @@ Use different _Resource_ values for _request_ and _response_ queues:
 
 ### Building and deploying _proxy-lambda_
 
-The _proxy lambda_ function should be deployed to AWS Lambda in place of the function you want to debug.
+The _proxy-lambda_ function should be deployed to AWS in place of the function you want to debug.
 
-Replace the following parts of the snippet with your values before running it from the project root:
+Replace the following parts of the bash script below with your values before running it from the project root:
 - _target_ - the architecture of the lambda function on AWS, e.g. `x86_64-unknown-linux-gnu`
 - _region_ - the region of the lambda function, e.g. `us-east-1`
 - _name_ - the name of the lambda function you want to replace with the proxy, e.g. `my-lambda`
@@ -115,7 +118,8 @@ cp ./target/$target/release/proxy-lambda ./bootstrap && zip proxy.zip bootstrap 
 aws lambda update-function-code --region $region --function-name $name --zip-file fileb://proxy.zip
 ```
 
-A deployed _proxy-lambda_ should return _OK_ or time out waiting for a response if you run it with a test event from the AWS console. Check CloudWatch logs for a detailed execution report.
+A deployed _proxy-lambda_ should return _OK_ or time out waiting for a response if you run it with a test event from the AWS console.
+Check CloudWatch logs for a detailed execution report.
 
 ### Debugging
 
@@ -127,8 +131,8 @@ __Pre-requisites:__
 
 __Launching the local lambda:__
 - start the _runtime-emulator_ in the terminal as a binary or with `cargo run`
-- run [env-lambda.sh](env-lambda.sh) in a terminal window on your local machine
-- start your lambda in the same terminal window with `cargo run`
+- add environmental variables from the prompt printed by the _runtime-emulator_ to the lambda terminal
+- start your lambda with `cargo run`
 
 ![launch example](/img/emulator-launch.png)
 
@@ -139,13 +143,13 @@ __Debugging:__
 
 __Success, failure and replay:__
 
-- successful responses are sent back to the caller if the response queue is configured
+- successful responses are sent back to the caller if the response queue is configured (`proxy_lambda_resp`)
 - panics or handler errors are not sent back to AWS
 - the same incoming SQS message is reused until the lambda completes successfully
-- _runtime-emulator_ deletes the incoming message (request) when the local lambda completes successfully
-- _proxy-lambda_ deletes the outgoing message (response) after forwarding it to the caller
-- _proxy-lambda_ clears the response queue before forwarding a request
-- purge the request queue manually to delete stale requests
+- _runtime-emulator_ deletes the request message from `proxy_lambda_req` queue when the local lambda completes successfully
+- _proxy-lambda_ deletes the response message from `proxy_lambda_resp` queue after forwarding it to the caller, e.g. to API Gateway
+- _proxy-lambda_ purges `proxy_lambda_resp` queue before sending a new request to `proxy_lambda_resp`
+- you have to purge `proxy_lambda_req` queue manually to delete stale requests
 
 If the local lambda fails, terminates or panics, you can make changes to its code and run it again to reuse the same incoming payload from the request queue.
 
@@ -162,26 +166,36 @@ Provide these env vars to _proxy-lambda_ and _runtime-emulator_ if your queue na
 
 ### Late responses
 
-Debugging the local lambda may take longer than the AWS service is willing to wait. For example, _proxy-lambda_ function can be configured to wait for up to 15 minutes, but the AWS API Gateway wait time is limited to 30 seconds. If a response from the local lambda arrives after 5 minutes, the _proxy-lambda_ can still forward it to the API Gateway, but that service would already time out. You may need to re-run the request for it to complete successfully end-to-end.
+Debugging the local lambda may take longer than the AWS service is willing to wait.
+For example, _proxy-lambda_ function can be configured to wait for up to 15 minutes, but the AWS API Gateway wait time is limited to 30 seconds.
+
+Assume that it took you 5 minutes to fix the lambda code and return the correct response.
+If _proxy-lambda_ was configured to wait for that long it would still forward the response to the API Gateway which timed out 4.5 min earlier.
+In that case, you may need to trigger another request for it to complete successfully end-to-end.
 
 ### Not waiting for responses from local lambda
 
-It may be inefficient to have _proxy-lambda_ waiting for a response from the local lambda.
+It may be inefficient to have _proxy-lambda_ waiting for a response from the local lambda because it takes too long or no response is necessary.
+Both _proxy-lambda_ and _runtime-emulator_ would not expect a response if the response queue is inaccessible.
 
 Option 1: delete _proxy_lambda_resp_ queue
 
-Option 2: add `PROXY_LAMBDA_RESP_QUEUE_URL` env var with no value to instruct _proxy-lambda_ and _runtime-emulator_ to not wait for the local lambda response
+Option 2: add `PROXY_LAMBDA_RESP_QUEUE_URL` env var with no value to _proxy-lambda_ and _runtime-emulator_
 
-Option 3: make _proxy_lambda_resp_ queue inaccessible by changing its IAM policy. E.g. change the resource name from the correct queue name `"Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_resp"` to `"Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_resp_BLOCKED"`.
-Both, _proxy-lambda_ and _runtime-emulator_  treat the access error as a hint to not expect a response.
+Option 3: make _proxy_lambda_resp_ queue inaccessible by changing its IAM policy.
+E.g. change the resource name from the correct queue name `"Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_resp"` to a non-existent name like this `"Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_resp_BLOCKED"`.
+Both _proxy-lambda_ and _runtime-emulator_ treat the access error as a hint to not expect a response.
 
 ### Canceling long _proxy-lambda_ wait
 
-Send a random message to the response queue via the AWS console to make _proxy-lambda_ exit and become available for a new request.
+If your _proxy-lambda_ is configured to expect a long debugging time, e.g. 30 minutes, you may want to cancel the wait for a rerun.
+Since it is impossible to kill a running lambda instance on AWS, the easiest way to cancel the wait is to send a random message to `proxy_lambda_resp` queue via the AWS console.
+The waiting _proxy-lambda_ will forward it to the caller and become available for a new request.
 
 ### Large payloads and data compression
 
-The size of the SQS payload is [limited to 262,144 bytes by SQS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/quotas-messages.html). To get around this limitation _proxy-lambda_ and _runtime-emulator_ compress oversized payloads using [flate2 crate](https://crates.io/crates/flate2) and send it as an encoded Base58 string. The encoding/decoding happens automatically at both ends.
+The size of the SQS payload is [limited to 262,144 bytes by SQS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/quotas-messages.html) while [Lambda allows up to 6MB](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
+_proxy-lambda_ and _runtime-emulator_ compress oversized payloads using [flate2 crate](https://crates.io/crates/flate2) and send them as an encoded Base58 string to get around that limitation.
 
 The data compression can take up to a minute in debug mode. It is significantly faster with release builds.
 
