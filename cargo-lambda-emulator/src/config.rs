@@ -1,9 +1,9 @@
 use crate::sqs::get_default_queues;
 use core::net::SocketAddrV4;
-use std::env::var;
+use std::env::{args, var};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 const REQUIRED_ENV_VARS: &str = "export AWS_LAMBDA_FUNCTION_VERSION=$LATEST && export AWS_LAMBDA_FUNCTION_MEMORY_SIZE=128 && export AWS_LAMBDA_FUNCTION_NAME=my-lambda && export AWS_LAMBDA_RUNTIME_API=127.0.0.1:9001";
 
@@ -146,8 +146,35 @@ async fn get_queues() -> Option<RemoteConfig> {
 /// Extracts the payload from a local file if the file name is provided in the command line arguments.
 /// Panics if the payload cannot be read.
 fn get_local_payload() -> Option<LocalConfig> {
+    // the number of arguments depends on if this is a cargo command or a standalone executable
+    // calculate where the params of the command are located inside the argument collection
+    let param_idx = args().next().map_or_else(
+        || 0, // this an impossible scenario because the very first argument is always the name of the executable
+        |v| {
+            if v.ends_with(
+                &args()
+                    .nth(1)
+                    .map_or_else(|| "###".to_string(), |v| format!("cargo-{v}")),
+            ) {
+                2 // invoked as a cargo command: `/home/mx/.cargo/bin/cargo-lambda-emulator lambda-emulator`
+            } else {
+                1 // invoked as a standalone binary: `/home/mx/projects/gh-forks/lambda-runtime-emulator/target/debug/cargo-lambda-emulator`
+            }
+        },
+    );
+    debug!(
+        "Param: {param_idx}, args: {}",
+        std::env::args().collect::<Vec<String>>().join(" ")
+    );
+
     // attempt to extract payload from a local file if the file name is provided in the command line arguments
-    if let Some(payload_file) = std::env::args().nth(1) {
+    if let Some(payload_file) = args().nth(param_idx) {
+        // cargo help lambda-emulator is equivalent to `/home/mx/.cargo/bin/cargo-lambda-emulator lambda-emulator --help`
+        if &payload_file == "--help" {
+            println!("Help message");
+            std::process::exit(0);
+        }
+
         // read the payload from the file
         match std::fs::read_to_string(payload_file.clone()) {
             Ok(payload) => Some(LocalConfig {

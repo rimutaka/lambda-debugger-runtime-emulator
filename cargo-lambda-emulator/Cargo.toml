@@ -1,5 +1,5 @@
 [package]
-name = "runtime-emulator"
+name = "cargo-lambda-emulator"
 version = "0.1.0"
 authors = ["rimutaka <max@onebro.me>"]
 edition = "2021"
@@ -16,7 +16,7 @@ name = "runtime_emulator_types"
 path = "src/types.rs"
 
 [[bin]]
-name = "runtime_emulator"
+name = "cargo-lambda-emulator"
 path = "src/main.rs"
 
 [dependencies]

@@ -17,7 +17,7 @@ mod config;
 mod handlers;
 mod sqs;
 
-// Cannot use OnceCell because it does not support async initialization
+// Cannot use std::OnceCell because it does not support async initialization
 lazy_static! {
     pub(crate) static ref CONFIG: AsyncOnce<Config> = AsyncOnce::new(async { Config::from_env().await });
 }
@@ -82,15 +82,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 /// - INFO for the emulator
 /// - ERROR for everything else
 fn init_tracing() {
+    // find out the name of the binary to set the default logging filter
+    let binary_name = std::env::current_exe()
+        .expect("Cannot get the path to the current executable")
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .expect("Cannot get the file name of the current executable")
+        // this replace is needed because tracing uses target names with underscores, e.g. `cargo_lambda_emulator`
+        .replace('-', "_");
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
                 .with_default_directive(
-                    Directive::from_str("runtime_emulator=info").expect("Invalid logging filter. It's a bug."),
+                    Directive::from_str(&[&binary_name, "=info"].concat())
+                        .expect("Invalid logging filter. It's a bug."),
                 )
                 .from_env_lossy(),
         )
-        // .with_env_filter(filter)
         .with_ansi(true)
         .with_target(false)
         .compact()

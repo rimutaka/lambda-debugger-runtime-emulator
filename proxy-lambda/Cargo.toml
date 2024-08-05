@@ -11,7 +11,7 @@ keywords = ["AWS", "Lambda", "API"]
 readme = "../../README.md"
 
 [dependencies]
-runtime-emulator = { path = "../runtime-emulator" }
+cargo-lambda-emulator = { path = "../cargo-lambda-emulator" }
 tokio = { workspace = true, features = [
   "macros",
   "io-util",
