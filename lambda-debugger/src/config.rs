@@ -156,9 +156,9 @@ fn get_local_payload() -> Option<LocalConfig> {
                     .nth(1)
                     .map_or_else(|| "###".to_string(), |v| format!("cargo-{v}")),
             ) {
-                2 // invoked as a cargo command: `/home/mx/.cargo/bin/cargo-lambda-emulator lambda-emulator`
+                2 // invoked as a cargo command: `/home/mx/.cargo/bin/cargo-lambda-debugger lambda-debugger`
             } else {
-                1 // invoked as a standalone binary: `/home/mx/projects/gh-forks/lambda-runtime-emulator/target/debug/cargo-lambda-emulator`
+                1 // invoked as a standalone binary: `/home/mx/projects/gh-forks/lambda-runtime-emulator/target/debug/cargo-lambda-debugger`
             }
         },
     );
@@ -169,15 +169,15 @@ fn get_local_payload() -> Option<LocalConfig> {
 
     // attempt to extract payload from a local file if the file name is provided in the command line arguments
     if let Some(payload_file) = args().nth(param_idx) {
-        // cargo help lambda-emulator is equivalent to `/home/mx/.cargo/bin/cargo-lambda-emulator lambda-emulator --help`
+        // cargo help lambda-debugger is equivalent to `/home/mx/.cargo/bin/cargo-lambda-debugger lambda-debugger --help`
         if &payload_file == "--help" {
             println!("AWS Lambda environment emulator for local and remote debugging.");
-            println!("1. run `cargo lambda-emulator`");
+            println!("1. run `cargo lambda-debugger`");
             println!("2. copy the env vars printed by the emulator");
             println!("3. set the env vars in a separate terminal and start your lambda there with `cargo run`");
             println!();
-            println!("With local payload: cargo lambda-emulator [payload_file], e.g. lambda_payload.json");
-            println!("With payload from AWS: cargo lambda-emulator");
+            println!("With local payload: cargo lambda-debugger [payload_file], e.g. lambda_payload.json");
+            println!("With payload from AWS: cargo lambda-debugger");
             println!();
             println!("See https://github.com/rimutaka/lambda-debugger-runtime-emulator for more info.");
 

@@ -1,5 +1,5 @@
 [workspace]
-members = ["proxy-lambda", "cargo-lambda-emulator", "test-lambda"]
+members = ["proxy-lambda", "lambda-debugger", "test-lambda"]
 
 resolver = "2"
 

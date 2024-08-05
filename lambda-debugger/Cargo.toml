@@ -1,5 +1,5 @@
 [package]
-name = "cargo-lambda-emulator"
+name = "lambda-debugger"
 version = "0.2.1"
 authors = ["rimutaka <max@onebro.me>"]
 edition = "2021"
@@ -16,7 +16,7 @@ name = "runtime_emulator_types"
 path = "src/types.rs"
 
 [[bin]]
-name = "cargo-lambda-emulator"
+name = "cargo-lambda-debugger" # this name has to have cargo- prefix for cargo to recognize it
 path = "src/main.rs"
 
 [dependencies]
