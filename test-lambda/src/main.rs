@@ -1,5 +1,5 @@
 /// This is a basic lambda for testing the emulator locally.
-use lambda_runtime::{service_fn, Error, LambdaEvent};
+use lambda_runtime::{service_fn, Error, LambdaEvent, Runtime};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -17,32 +17,31 @@ struct Response {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     // minimal logging to keep it simple
+    // intended to run locally only
     tracing_subscriber::fmt()
-        .compact()
         .without_time()
-        .with_ansi(true)
+        .with_ansi(true) // the color codes work in the terminal only
         .with_target(false)
         .init();
 
-    let func = service_fn(my_handler);
-    lambda_runtime::run(func).await?;
+    // init the runtime directly to avoid the extra logging layer
+    let runtime = Runtime::new(service_fn(my_handler));
+    runtime.run().await?;
+
     Ok(())
 }
 
 pub(crate) async fn my_handler(event: LambdaEvent<Request>) -> Result<Response, Error> {
-    info!("Received event: {:?}", event);
+    info!("Handler invoked");
 
-    // extract some useful info from the request
     let command = event.payload.command;
 
     info!("Command received: {}", command);
 
-    // prepare the response
-    let resp = Response {
+    Ok(Response {
         req_id: event.context.request_id,
-        msg: format!("Command {} executed.", command),
-    };
+        msg: "Hello from Rust!".to_string(),
+    })
 
-    // return `Response` (it will be serialized to JSON automatically by the runtime)
-    Ok(resp)
+    // Err(Error::from("Error"))
 }
