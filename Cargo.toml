@@ -1,9 +1,6 @@
 [workspace]
-members = [
-    "proxy-lambda",
-    "cargo-lambda-emulator",
-    "test-lambda",
-]
+members = ["proxy-lambda", "cargo-lambda-emulator", "test-lambda"]
+
 resolver = "2"
 
 [workspace.dependencies]
@@ -12,7 +9,7 @@ tokio = { version = "1.14" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = { version = "0.1", features = ["log"] }
-tracing-subscriber = {version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [profile.release]
 lto = true

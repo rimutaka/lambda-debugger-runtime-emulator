@@ -1,17 +1,17 @@
 [package]
 name = "cargo-lambda-emulator"
-version = "0.1.0"
+version = "0.2.1"
 authors = ["rimutaka <max@onebro.me>"]
 edition = "2021"
-description = "AWS Lambda Runtime Emulator for local debugging"
+description = "AWS Lambda Runtime Emulator for local and remote debugging"
 license = "Apache-2.0"
-repository = "https://github.com/rimutaka/lambda-debug-proxy"
+repository = "https://github.com/rimutaka/lambda-debugger-runtime-emulator"
 categories = ["web-programming::http-server"]
 keywords = ["AWS", "Lambda", "API"]
 readme = "../README.md"
 
 [lib]
-# needed to export types
+# the lib is needed to export types for other crates
 name = "runtime_emulator_types"
 path = "src/types.rs"
 

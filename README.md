@@ -2,13 +2,19 @@
 
 This emulator allows running Lambda functions locally with either a local payload from a file or a remote payload from AWS as if the local lambda was running there.
 
-## Debugging with local payload
+## Installation and usage
+
+```bash
+cargo install lambda-emulator
+```
+
+### Debugging with local payload
 
 Use this method for simple use cases where a single static payload is sufficient.
 
 1. Save your payload into a file, e.g. save `{"command": "echo"}` into `test-payload.json` file
-2. Start the emulator with the payload file name as its only param, e.g. `runtime-emulator test-payload.json`
-3. Start your lambda with `cargo run`
+2. Start the emulator with the payload file name as its only param, e.g. `cargo lambda-emulator test-payload.json`
+3. Add env vars printed by the emulator and start your lambda with `cargo run` in a separate terminal
 
 The lambda will connect to the emulator and receive the payload.
 You can re-run your lambda with the same payload as many times as needed.
@@ -24,7 +30,7 @@ __Remote debugging configuration__
 This project provides the tools necessary to bring the AWS payload to your local machine in real-time, run the lambda and send back the response as if the local lambda was running on AWS.
 
 - _proxy-lambda_ forwards Lambda requests and responses between AWS and your development machine in real time
-- _runtime-emulator_ provides Lambda APIs to run a lambda function locally and exchange payloads with AWS
+- _cargo-lambda-emulator_ provides Lambda APIs to run a lambda function locally and exchange payloads with AWS
 
 ![function debugged locally](./img/lambda-debugger-components.png)
 
@@ -130,9 +136,9 @@ __Pre-requisites:__
 ![list of sqs queues](/img/sqs-queues.png)
 
 __Launching the local lambda:__
-- start the _runtime-emulator_ in the terminal as a binary or with `cargo run`
-- add environmental variables from the prompt printed by the _runtime-emulator_ to the lambda terminal
-- start your lambda with `cargo run`
+- run `cargo lambda-emulator` in a separate terminal
+- add environmental variables from the prompt printed by the emulator
+- start your lambda with `cargo run` in the same terminal where you added the env vars
 
 ![launch example](/img/emulator-launch.png)
 
@@ -146,7 +152,7 @@ __Success, failure and replay:__
 - successful responses are sent back to the caller if the response queue is configured (`proxy_lambda_resp`)
 - panics or handler errors are not sent back to AWS
 - the same incoming SQS message is reused until the lambda completes successfully
-- _runtime-emulator_ deletes the request message from `proxy_lambda_req` queue when the local lambda completes successfully
+- _lambda-emulator_ deletes the request message from `proxy_lambda_req` queue when the local lambda completes successfully
 - _proxy-lambda_ deletes the response message from `proxy_lambda_resp` queue after forwarding it to the caller, e.g. to API Gateway
 - _proxy-lambda_ purges `proxy_lambda_resp` queue before sending a new request to `proxy_lambda_resp`
 - you have to purge `proxy_lambda_req` queue manually to delete stale requests
@@ -158,9 +164,9 @@ If the local lambda fails, terminates or panics, you can make changes to its cod
 
 ### Custom SQS queue names
 
-By default, _proxy-lambda_ and the local _runtime-emulator_ attempt to connect to `proxy_lambda_req` and `proxy_lambda_resp` queues in the same region.
+By default, _proxy-lambda_ and the local _lambda-emulator_ attempt to connect to `proxy_lambda_req` and `proxy_lambda_resp` queues in the same region.
 
-Provide these env vars to _proxy-lambda_ and _runtime-emulator_ if your queue names differ from the defaults:
+Provide these env vars to _proxy-lambda_ and _lambda-emulator_ if your queue names differ from the defaults:
 - `PROXY_LAMBDA_REQ_QUEUE_URL` - _request_ queue, e.g. https://sqs.us-east-1.amazonaws.com/512295225992/debug_request
 - `PROXY_LAMBDA_RESP_QUEUE_URL` - _response_ queue, e.g. https://sqs.us-east-1.amazonaws.com/512295225992/debug_response
 
@@ -176,15 +182,15 @@ In that case, you may need to trigger another request for it to complete success
 ### Not waiting for responses from local lambda
 
 It may be inefficient to have _proxy-lambda_ waiting for a response from the local lambda because it takes too long or no response is necessary.
-Both _proxy-lambda_ and _runtime-emulator_ would not expect a response if the response queue is inaccessible.
+Both _proxy-lambda_ and _lambda-emulator_ would not expect a response if the response queue is inaccessible.
 
 Option 1: delete _proxy_lambda_resp_ queue
 
-Option 2: add `PROXY_LAMBDA_RESP_QUEUE_URL` env var with no value to _proxy-lambda_ and _runtime-emulator_
+Option 2: add `PROXY_LAMBDA_RESP_QUEUE_URL` env var with no value to _proxy-lambda_ and _lambda-emulator_
 
 Option 3: make _proxy_lambda_resp_ queue inaccessible by changing its IAM policy.
 E.g. change the resource name from the correct queue name `"Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_resp"` to a non-existent name like this `"Resource": "arn:aws:sqs:us-east-1:512295225992:proxy_lambda_resp_BLOCKED"`.
-Both _proxy-lambda_ and _runtime-emulator_ treat the access error as a hint to not expect a response.
+Both _proxy-lambda_ and _lambda-emulator_ treat the access error as a hint to not expect a response.
 
 ### Canceling long _proxy-lambda_ wait
 
@@ -195,17 +201,17 @@ The waiting _proxy-lambda_ will forward it to the caller and become available fo
 ### Large payloads and data compression
 
 The size of the SQS payload is [limited to 262,144 bytes by SQS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/quotas-messages.html) while [Lambda allows up to 6MB](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
-_proxy-lambda_ and _runtime-emulator_ compress oversized payloads using [flate2 crate](https://crates.io/crates/flate2) and send them as an encoded Base58 string to get around that limitation.
+_proxy-lambda_ and _lambda-emulator_ compress oversized payloads using [flate2 crate](https://crates.io/crates/flate2) and send them as an encoded Base58 string to get around that limitation.
 
 The data compression can take up to a minute in debug mode. It is significantly faster with release builds.
 
 ### Logging
 
-Both _proxy-lambda_ and _runtime-emulator_ use `RUST_LOG` env var to set the logging level and filters.
+Both _proxy-lambda_ and _lambda-emulator_ use `RUST_LOG` env var to set the logging level and filters.
 If `RUST_LOG` is not present or is empty, both crates log at the _INFO_ level and suppress logging from their dependencies.
 See [https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#example-syntax] for more info.
 
 Examples of `RUST_LOG` values:
 - `error` - log errors only from all crates and dependencies
-- `warn,runtime_emulator=info` - _INFO_ level for the _runtime-emulator_, _WARN_ level for everything else
+- `warn,cargo_lambda_emulator=info` - _INFO_ level for the _lambda-emulator_, _WARN_ level for everything else
 - `proxy=debug` - detailed logging in _proxy-lambda_

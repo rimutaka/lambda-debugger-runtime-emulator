@@ -171,7 +171,16 @@ fn get_local_payload() -> Option<LocalConfig> {
     if let Some(payload_file) = args().nth(param_idx) {
         // cargo help lambda-emulator is equivalent to `/home/mx/.cargo/bin/cargo-lambda-emulator lambda-emulator --help`
         if &payload_file == "--help" {
-            println!("Help message");
+            println!("AWS Lambda environment emulator for local and remote debugging.");
+            println!("1. run `cargo lambda-emulator`");
+            println!("2. copy the env vars printed by the emulator");
+            println!("3. set the env vars in a separate terminal and start your lambda there with `cargo run`");
+            println!();
+            println!("With local payload: cargo lambda-emulator [payload_file], e.g. lambda_payload.json");
+            println!("With payload from AWS: cargo lambda-emulator");
+            println!();
+            println!("See https://github.com/rimutaka/lambda-debugger-runtime-emulator for more info.");
+
             std::process::exit(0);
         }
 
